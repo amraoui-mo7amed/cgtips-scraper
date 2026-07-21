@@ -14,6 +14,7 @@ logger = logging.getLogger("scraper")
 
 BASE_URL = "https://sketchup.cgtips.org"
 BRAVE_PATH = config("BRAVE_PATH", default=r"C:\Users\mohamed\AppData\Local\BraveSoftware\Brave-Browser\Application\brave.exe")
+CHROME_PATH = config("CHROME_PATH", default=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 
 
 class Scraper:
@@ -26,9 +27,25 @@ class Scraper:
         logger.info("Fetching page: %s", url)
         try:
             with sync_playwright() as p:
-                logger.debug("Launching Brave browser (headless=True)")
-                browser = p.chromium.launch(executable_path=BRAVE_PATH, headless=False)
-                logger.debug("Browser launched successfully")
+                browsers_to_try = [
+                    ("Brave", BRAVE_PATH),
+                    ("Chrome", CHROME_PATH),
+                ]
+                browser = None
+                last_error = None
+                for name, exe_path in browsers_to_try:
+                    try:
+                        logger.debug("Launching %s browser (headless=False)", name)
+                        browser = p.chromium.launch(executable_path=exe_path, headless=False)
+                        logger.debug("%s launched successfully", name)
+                        break
+                    except Exception as e:
+                        logger.warning("Failed to launch %s: %s", name, e)
+                        last_error = e
+                        continue
+
+                if browser is None:
+                    raise last_error or Exception("No browser available")
 
                 context = browser.new_context(user_agent=self.user_agent)
                 page = context.new_page()

@@ -19,6 +19,7 @@ logger = logging.getLogger("main")
 CATEGORIES_FILE = "categories.json"
 IMAGES_DIR = Path("feeds")
 BRAVE_USER_DATA = os.path.join(os.environ["LOCALAPPDATA"], "BraveSoftware", "Brave-Browser", "User Data")
+CHROME_USER_DATA = os.path.join(os.environ["LOCALAPPDATA"], "Google", "Chrome", "User Data")
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
@@ -200,19 +201,41 @@ if __name__ == "__main__":
     p_ctx = None
     page = None
     import subprocess
-    result = subprocess.run(["tasklist", "/FI", "IMAGENAME eq brave.exe"], capture_output=True, text=True)
-    if "brave.exe" in result.stdout:
-        print("\n⚠️  Brave is running. Close it first, then press Enter to continue...")
-        input()
     from playwright.sync_api import sync_playwright
-    from scraper import BRAVE_PATH
-    p_ctx = sync_playwright().start()
-    context = p_ctx.chromium.launch_persistent_context(
-        user_data_dir=BRAVE_USER_DATA,
-        executable_path=BRAVE_PATH,
-            headless=True,
-    )
-    page = context.pages[0] if context.pages else context.new_page()
+    from scraper import BRAVE_PATH, CHROME_PATH
+
+    browsers_to_try = [
+        ("Brave", BRAVE_PATH, BRAVE_USER_DATA, "brave.exe"),
+        ("Chrome", CHROME_PATH, CHROME_USER_DATA, "chrome.exe"),
+    ]
+    context = None
+    p_ctx = None
+    page = None
+    for name, exe_path, user_data_dir, exe_name in browsers_to_try:
+        try:
+            result = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {exe_name}"], capture_output=True, text=True)
+            if exe_name in result.stdout:
+                print(f"\n⚠️  {name} is running. Close it first, then press Enter to continue...")
+                input()
+            p_ctx = sync_playwright().start()
+            context = p_ctx.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                executable_path=exe_path,
+                headless=True,
+            )
+            page = context.pages[0] if context.pages else context.new_page()
+            logger.info("Using %s browser", name)
+            break
+        except Exception as e:
+            logger.warning("Failed to launch %s: %s", name, e)
+            if p_ctx:
+                p_ctx.stop()
+                p_ctx = None
+            continue
+
+    if context is None:
+        logger.error("No browser available (tried Brave and Chrome)")
+        exit(1)
 
     cache = load_cache()
     all_data = []
