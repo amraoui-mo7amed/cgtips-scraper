@@ -1,16 +1,19 @@
 import logging
 import re
 import time
+from pathlib import Path
+from typing import Optional, Callable
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup as bs
-from urllib.parse import urljoin
 from decouple import config
 from tqdm import tqdm
 
+from config import USER_AGENT
+
 logger = logging.getLogger("utils")
 
-FEED_UA = config("USER_AGENT")
+FEED_UA = USER_AGENT
 
 sess = cloudscraper.create_scraper()
 sess.headers.update({
@@ -45,7 +48,10 @@ def get_feed(feed_url=None, max_items=0, page=None):
         if resp is None:
             break
 
-        soup = bs(resp.content, "xml")
+        try:
+            soup = bs(resp.content, "xml")
+        except Exception:
+            soup = bs(resp.content, "html.parser")
         items = soup.find_all("item")
         if not items:
             break
@@ -68,7 +74,7 @@ def get_feed(feed_url=None, max_items=0, page=None):
             all_entries = all_entries[:max_items]
             break
 
-        time.sleep(0.5)
+        time.sleep(0.3)
 
     if not all_entries and page is not None:
         logger.info("cloudscraper returned nothing, falling back to Playwright")
@@ -113,12 +119,13 @@ def _get_feed_playwright(feed_url, max_items, page):
             all_entries = all_entries[:max_items]
             break
 
-        time.sleep(0.5)
+        time.sleep(0.3)
 
     return all_entries
 
 
 def extract_download_url(article_url, retries=3):
+    """Fetches article page and finds locker link inside data-locker-id code."""
     for attempt in range(1, retries + 1):
         try:
             resp = sess.get(article_url, timeout=30)
@@ -134,32 +141,48 @@ def extract_download_url(article_url, retries=3):
             return None
         except Exception as e:
             if attempt < retries:
-                time.sleep(2)
+                time.sleep(1.5)
     return None
 
 
-def download_from_locker(page, locker_url, dest_path):
+def resolve_gdrive_from_locker(page, locker_url):
+    """Loads content locker page with Playwright and extracts Google Drive destination URL."""
     try:
         page.goto(locker_url, timeout=30000, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(3500)
 
         gdrive_url = page.evaluate("""() => {
             const btn = document.querySelector('.download_dem a.btn');
-            return btn ? btn.href : null;
+            if (btn && btn.href) return btn.href;
+            const anyLink = Array.from(document.querySelectorAll('a')).find(a => a.href && a.href.includes('drive.google.com'));
+            return anyLink ? anyLink.href : null;
         }""")
-
-        if not gdrive_url or "drive.google.com" not in gdrive_url:
-            return None
-
-        return _download_from_gdrive(page, gdrive_url, dest_path)
+        return gdrive_url
     except Exception as e:
+        logger.warning("Failed to resolve locker %s: %s", locker_url, e)
         return None
 
 
-def _download_req(file_id, dest_path):
+def download_from_locker(page, locker_url, dest_path, progress_cb: Optional[Callable] = None):
+    try:
+        gdrive_url = resolve_gdrive_from_locker(page, locker_url)
+        if not gdrive_url or "drive.google.com" not in gdrive_url:
+            logger.warning("No valid Google Drive URL extracted from %s", locker_url)
+            return None
+
+        return _download_from_gdrive(page, gdrive_url, dest_path, progress_cb=progress_cb)
+    except Exception as e:
+        logger.error("Error downloading from locker %s: %s", locker_url, e)
+        return None
+
+
+def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
     s = cloudscraper.create_scraper()
     s.headers.update({"User-Agent": FEED_UA})
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+    dest_path = Path(dest_path)
+    dest_path.mkdir(parents=True, exist_ok=True)
 
     r = s.get(url, allow_redirects=False, timeout=30)
     r.raise_for_status()
@@ -182,6 +205,7 @@ def _download_req(file_id, dest_path):
             r.raise_for_status()
 
         if b"Quota exceeded" in r.content or b"Too many users" in r.content:
+            logger.warning("Direct GDrive download hit quota limit for %s", file_id)
             return None
 
         ct = r.headers.get("Content-Type", "")
@@ -196,19 +220,28 @@ def _download_req(file_id, dest_path):
     if not name:
         name = f"{file_id}.zip"
 
+    name = re.sub(r'[<>:"/\\|?*]', "_", name).strip(" .") or f"{file_id}.zip"
     path = dest_path / name
     total = int(r.headers.get("Content-Length", 0))
+    downloaded = 0
+
     with open(path, "wb") as f:
-        with tqdm(total=total, unit='B', unit_scale=True, desc=name[:40], leave=False) as pbar:
-            for chunk in r.iter_content(chunk_size=8192):
+        with tqdm(total=total, unit='B', unit_scale=True, desc=name[:35], leave=False) as pbar:
+            for chunk in r.iter_content(chunk_size=16384):
                 if chunk:
                     f.write(chunk)
+                    downloaded += len(chunk)
                     pbar.update(len(chunk))
+                    if progress_cb:
+                        progress_cb(downloaded, total, name)
+
     return str(path)
 
 
 def _download_pw(page, file_id, dest_path):
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    dest_path = Path(dest_path)
+    dest_path.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(2):
         try:
@@ -237,24 +270,33 @@ def _download_pw(page, file_id, dest_path):
     return None
 
 
-def _download_from_gdrive(page, gdrive_url, dest_path):
+def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Callable] = None):
     m = re.search(r"/file/d/([^/]+)", gdrive_url)
     if not m:
         return None
     file_id = m.group(1)
+    dest_path = Path(dest_path)
     dest_path.mkdir(parents=True, exist_ok=True)
 
-    result = _download_req(file_id, dest_path)
+    # 1. Direct requests download (fastest)
+    result = _download_req(file_id, dest_path, progress_cb=progress_cb)
     if result:
         return result
 
+    # 2. GDrive API quota bypass
     try:
         from gdrive_api import copy_and_download
+        logger.info("Direct download failed/quota limited, attempting Drive API bypass for %s", file_id)
         result = copy_and_download(file_id, dest_path)
         if result:
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Drive API fallback bypassed: %s", e)
 
-    result = _download_pw(page, file_id, dest_path)
-    return result
+    # 3. Playwright browser download fallback
+    if page:
+        logger.info("Attempting browser download fallback for %s", file_id)
+        result = _download_pw(page, file_id, dest_path)
+        return result
+
+    return None

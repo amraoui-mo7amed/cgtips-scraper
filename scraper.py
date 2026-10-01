@@ -2,71 +2,67 @@ import logging
 import json
 from bs4 import BeautifulSoup as bs
 from decouple import config
-from playwright.sync_api import sync_playwright
-from utils import get_feed
+from browser_manager import BrowserManager
+from config import BASE_URL, USER_AGENT, HEADLESS, CATEGORIES_FILE
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("scraper")
 
-BASE_URL = "https://sketchup.cgtips.org"
-BRAVE_PATH = config("BRAVE_PATH", default=r"C:\Users\mohamed\AppData\Local\BraveSoftware\Brave-Browser\Application\brave.exe")
-CHROME_PATH = config("CHROME_PATH", default=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
-
 
 class Scraper:
-    def __init__(self):
+    def __init__(self, headless=None, user_agent=None):
         self.base_url = BASE_URL
-        self.user_agent = config("USER_AGENT")
-        logger.info("Scraper initialized with base_url=%s", self.base_url)
+        self.user_agent = user_agent or USER_AGENT
+        self.headless = HEADLESS if headless is None else headless
+        self.browser_manager = BrowserManager(headless=self.headless, user_agent=self.user_agent)
+        logger.info("Scraper initialized with base_url=%s, headless=%s", self.base_url, self.headless)
 
     def get_soup(self, url):
+        """Fetches page HTML using fast requests first, cloudscraper second, and Playwright fallback."""
         logger.info("Fetching page: %s", url)
+        # 1. Fast requests attempt
         try:
-            with sync_playwright() as p:
-                browsers_to_try = [
-                    ("Brave", BRAVE_PATH),
-                    ("Chrome", CHROME_PATH),
-                ]
-                browser = None
-                last_error = None
-                for name, exe_path in browsers_to_try:
-                    try:
-                        logger.debug("Launching %s browser (headless=False)", name)
-                        browser = p.chromium.launch(executable_path=exe_path, headless=False)
-                        logger.debug("%s launched successfully", name)
-                        break
-                    except Exception as e:
-                        logger.warning("Failed to launch %s: %s", name, e)
-                        last_error = e
-                        continue
-
-                if browser is None:
-                    raise last_error or Exception("No browser available")
-
-                context = browser.new_context(user_agent=self.user_agent)
-                page = context.new_page()
-                logger.debug("Navigating to URL with 30s timeout")
-                page.goto(url, timeout=30000)
-                logger.info("Page loaded: %s (title: %s)", url, page.title())
-
-                html = page.content()
-                logger.debug("Page HTML captured (%d bytes)", len(html))
-                browser.close()
-                logger.debug("Browser closed")
+            import requests
+            r = requests.get(url, headers={"User-Agent": self.user_agent}, timeout=10)
+            if r.status_code == 200 and len(r.text) > 1000:
+                logger.debug("Fast requests fetch succeeded (%d bytes)", len(r.content))
+                return bs(r.content, "html.parser")
         except Exception as e:
-            logger.error("Failed to fetch %s: %s", url, e, exc_info=True)
+            logger.debug("Fast requests failed (%s), trying cloudscraper", e)
+
+        # 2. Cloudscraper attempt
+        try:
+            import cloudscraper
+            s = cloudscraper.create_scraper()
+            s.headers.update({"User-Agent": self.user_agent})
+            r = s.get(url, timeout=15)
+            if r.status_code == 200 and len(r.text) > 1000:
+                logger.debug("Cloudscraper fetch succeeded (%d bytes)", len(r.content))
+                return bs(r.content, "html.parser")
+        except Exception as e:
+            logger.debug("Cloudscraper failed (%s), falling back to browser", e)
+
+        # 2. Playwright fallback
+        try:
+            p, context = self.browser_manager.get_context()
+            page = context.new_page()
+            logger.debug("Navigating with Playwright (30s timeout)")
+            page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            html = page.content()
+            context.close()
+            p.stop()
+            logger.debug("Browser page HTML captured (%d bytes)", len(html))
+            return bs(html, "html.parser")
+        except Exception as e:
+            logger.error("Failed to fetch %s via browser: %s", url, e, exc_info=True)
             return None
 
-        soup = bs(html, "html.parser")
-        logger.info("Soup parsed successfully")
-        return soup
-
     def get_categories(self):
-        logger.info("Starting category extraction from base URL")
+        logger.info("Starting category extraction from base URL: %s", self.base_url)
         soup = self.get_soup(self.base_url)
 
         if not soup:
@@ -111,9 +107,8 @@ class Scraper:
             if entry.get("heading") or subcategories:
                 categories.append(entry)
 
-        logger.info("Extracted %d containers", len(categories))
+        logger.info("Extracted %d categories from site", len(categories))
         return categories
-    
 
     def save_to_json(self, data, filename):
         logger.info("Saving data to %s (%d items)", filename, len(data))
@@ -124,35 +119,13 @@ class Scraper:
         except Exception as e:
             logger.error("Failed to save to %s: %s", filename, e, exc_info=True)
 
-    
-
 
 if __name__ == "__main__":
     logger.info("=== Scraper started ===")
     scraper = Scraper()
-
     categories = scraper.get_categories()
     if categories:
-        logger.info("Categories found: %d", len(categories))
-        scraper.save_to_json(categories, "categories.json")
-
-        for cat in categories:
-            heading = cat.get("heading")
-            if heading:
-                feed_url = heading["feed_url"]
-                logger.info("Fetching feed for heading: %s (%s)", heading["name"], feed_url)
-                feed = get_feed(feed_url, max_items=2)
-                heading["feed_entries"] = feed
-
-            for sub in cat.get("subcategories", []):
-                feed_url = sub["feed_url"]
-                logger.info("Fetching feed for subcategory: %s (%s)", sub["name"], feed_url)
-                feed = get_feed(feed_url, max_items=2)
-                sub["feed_entries"] = feed
-
-        scraper.save_to_json(categories, "categories_with_feeds.json")
-        logger.info("Saved categories with feeds to categories_with_feeds.json")
+        scraper.save_to_json(categories, str(CATEGORIES_FILE))
+        print(f"Extracted and saved {len(categories)} categories to {CATEGORIES_FILE}")
     else:
-        logger.warning("No categories extracted")
-
-    logger.info("=== Scraper finished ===")
+        print("No categories extracted.")

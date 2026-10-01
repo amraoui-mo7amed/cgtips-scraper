@@ -1,0 +1,11 @@
+PySide6>=6.6.0
+requests>=2.31.0
+beautifulsoup4>=4.15.0
+lxml>=5.0.0
+cloudscraper>=1.2.71
+playwright>=1.48.0
+python-decouple>=3.8
+tqdm>=4.66.0
+google-api-python-client>=2.198.0
+google-auth-oauthlib>=1.4.0
+google-auth-httplib2>=0.4.0

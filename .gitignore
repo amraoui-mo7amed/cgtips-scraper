@@ -1,4 +1,6 @@
 venv/
+.venv/
+data/
 __pycache__/
 *.pyc
 .env
@@ -8,3 +10,18 @@ categories.json
 selected_feeds.json
 feeds/
 page.html
+
+# Flutter / Mobile
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.pub-cache/
+# Desktop / PySide6
+desktop/.venv/
+desktop/__pycache__/
+build/
+dist/
+*.spec.bak
+.DS_Store

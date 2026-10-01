@@ -12,38 +12,82 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
+from config import CREDENTIALS_FILE, TOKEN_FILE
+
 logger = logging.getLogger("gdrive_api")
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-CREDENTIALS_FILE = "credentials.json"
-TOKEN_FILE = "token.pickle"
+
+
+def check_gdrive_status():
+    """Returns a dictionary detailing the GDrive API setup and token health."""
+    has_creds = Path(CREDENTIALS_FILE).exists()
+    has_token = Path(TOKEN_FILE).exists()
+    token_valid = False
+    details = ""
+
+    if not has_creds:
+        details = f"Missing credentials file ({CREDENTIALS_FILE.name})"
+    elif not has_token:
+        details = "Credentials present, but not authenticated yet (token.pickle missing)"
+    else:
+        try:
+            with open(TOKEN_FILE, "rb") as f:
+                creds = pickle.load(f)
+            if creds and creds.valid:
+                token_valid = True
+                details = "Authenticated & ready"
+            elif creds and creds.expired and creds.refresh_token:
+                token_valid = True
+                details = "Token expired (will auto-refresh on request)"
+            else:
+                details = "Token invalid"
+        except Exception as e:
+            details = f"Failed to read token: {e}"
+
+    return {
+        "credentials_present": has_creds,
+        "token_present": has_token,
+        "authenticated": token_valid,
+        "details": details,
+        "credentials_path": str(CREDENTIALS_FILE),
+        "token_path": str(TOKEN_FILE),
+    }
 
 
 def _get_service():
-    if not os.path.exists(CREDENTIALS_FILE):
-        logger.warning("credentials.json not found — Drive API unavailable")
+    if not Path(CREDENTIALS_FILE).exists():
+        logger.warning("credentials.json not found (%s) — Drive API unavailable", CREDENTIALS_FILE)
         return None
 
     creds = None
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "rb") as f:
-            creds = pickle.load(f)
+    if Path(TOKEN_FILE).exists():
+        try:
+            with open(TOKEN_FILE, "rb") as f:
+                creds = pickle.load(f)
+        except Exception as e:
+            logger.warning("Failed loading token file %s: %s", TOKEN_FILE, e)
+            creds = None
 
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed refreshing token: %s", e)
             creds = None
 
     if not creds or not creds.valid:
         try:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
             creds = flow.run_local_server(port=0)
         except Exception as e:
             logger.error("OAuth flow failed: %s", e)
             return None
-        with open(TOKEN_FILE, "wb") as f:
-            pickle.dump(creds, f)
+        try:
+            with open(TOKEN_FILE, "wb") as f:
+                pickle.dump(creds, f)
+        except Exception as e:
+            logger.warning("Failed saving token to %s: %s", TOKEN_FILE, e)
 
     return build("drive", "v3", credentials=creds)
 
@@ -89,6 +133,7 @@ def copy_and_download(file_id, dest_path):
         copy_name = copied.get("name", orig_name)
         logger.info("Copied to Drive (id=%s)", copy_id)
 
+        dest_path = Path(dest_path)
         dest_path.mkdir(parents=True, exist_ok=True)
         local_name = _sanitize_filename(copy_name)
         local_path = dest_path / local_name
