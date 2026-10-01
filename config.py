@@ -1,5 +1,7 @@
 import socket
 import os
+import sys
+import shutil
 from pathlib import Path
 from decouple import config
 
@@ -33,6 +35,7 @@ CHROME_PATH = config("CHROME_PATH", default="")
 
 # Data and Storage Paths
 if getattr(sys, "frozen", False):
+    _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
     if sys.platform == "darwin":
         _USER_DATA = Path.home() / "Library" / "Application Support" / "CGTips 3D"
     elif sys.platform == "win32":
@@ -42,6 +45,20 @@ if getattr(sys, "frozen", False):
     _USER_DATA.mkdir(parents=True, exist_ok=True)
     DEFAULT_DATA_DIR = str(_USER_DATA / "data")
     DEFAULT_FEEDS_DIR = str(Path.home() / "Downloads" / "CGTips_Models")
+
+    # Pre-populate bundled categories if not already in user data
+    bundled_data = _BUNDLE_DIR / "data"
+    user_data_path = Path(DEFAULT_DATA_DIR)
+    user_data_path.mkdir(parents=True, exist_ok=True)
+    if bundled_data.exists():
+        for item in ["categories.json", "selected_feeds.json"]:
+            src = bundled_data / item
+            dst = user_data_path / item
+            if src.exists() and not dst.exists():
+                try:
+                    shutil.copy2(src, dst)
+                except Exception:
+                    pass
 else:
     DEFAULT_DATA_DIR = str(BASE_DIR / "data")
     DEFAULT_FEEDS_DIR = str(BASE_DIR / "feeds")
@@ -55,11 +72,15 @@ FEEDS_DIR.mkdir(parents=True, exist_ok=True)
 # Helper for locating data files in data/ or root directory
 def _resolve_data_file(filename: str) -> Path:
     data_file = DATA_DIR / filename
-    root_file = BASE_DIR / filename
     if data_file.exists():
         return data_file
+    root_file = BASE_DIR / filename
     if root_file.exists():
         return root_file
+    if getattr(sys, "frozen", False):
+        bundle_file = Path(getattr(sys, "_MEIPASS", BASE_DIR)) / "data" / filename
+        if bundle_file.exists():
+            return bundle_file
     return data_file
 
 CATEGORIES_FILE = _resolve_data_file("categories.json")

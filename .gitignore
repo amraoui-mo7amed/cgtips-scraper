@@ -1,13 +1,11 @@
 venv/
 .venv/
-data/
+data/cache/
 __pycache__/
 *.pyc
 .env
 credentials.json
 token.pickle
-categories.json
-selected_feeds.json
 feeds/
 page.html
 

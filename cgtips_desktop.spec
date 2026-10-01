@@ -9,8 +9,10 @@ ROOT_DIR = Path.cwd()
 datas = [
     (str(ROOT_DIR / 'desktop' / 'qml'), 'desktop/qml'),
     (str(ROOT_DIR / 'desktop' / 'assets'), 'desktop/assets'),
-    (str(ROOT_DIR / 'data'), 'data'),
 ]
+if (ROOT_DIR / 'data').exists():
+    datas.append((str(ROOT_DIR / 'data'), 'data'))
+
 
 hiddenimports = [
     'PySide6.QtQuick',

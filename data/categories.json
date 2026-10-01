@@ -1,0 +1,870 @@
+[
+    {
+        "heading": {
+            "name": "Furniture",
+            "url": "https://sketchup.cgtips.org/furniture/",
+            "feed_url": "https://sketchup.cgtips.org/furniture/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Wardrobe & Display cabinets",
+                "url": "https://sketchup.cgtips.org/furniture/wardrobe-display-cabinets/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/wardrobe-display-cabinets/feed"
+            },
+            {
+                "name": "Shoe Storage Cabinet",
+                "url": "https://sketchup.cgtips.org/furniture/shoe-storage-cabinet/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/shoe-storage-cabinet/feed"
+            },
+            {
+                "name": "Wine Cabinet",
+                "url": "https://sketchup.cgtips.org/furniture/wine-cabinet/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/wine-cabinet/feed"
+            },
+            {
+                "name": "Dressing Table",
+                "url": "https://sketchup.cgtips.org/furniture/dressing-table/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/dressing-table/feed"
+            },
+            {
+                "name": "TV cabinets",
+                "url": "https://sketchup.cgtips.org/furniture/tv-cabinets/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/tv-cabinets/feed"
+            },
+            {
+                "name": "TV Wall",
+                "url": "https://sketchup.cgtips.org/tag/tv-wall/",
+                "feed_url": "https://sketchup.cgtips.org/tag/tv-wall/feed"
+            },
+            {
+                "name": "Bookshelf",
+                "url": "https://sketchup.cgtips.org/furniture/bookshelf/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/bookshelf/feed"
+            },
+            {
+                "name": "Sofa",
+                "url": "https://sketchup.cgtips.org/furniture/sofa/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/sofa/feed"
+            },
+            {
+                "name": "Stool",
+                "url": "https://sketchup.cgtips.org/tag/stool/",
+                "feed_url": "https://sketchup.cgtips.org/tag/stool/feed"
+            },
+            {
+                "name": "Table",
+                "url": "https://sketchup.cgtips.org/furniture/table/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/table/feed"
+            },
+            {
+                "name": "Altar",
+                "url": "https://sketchup.cgtips.org/tag/altar/",
+                "feed_url": "https://sketchup.cgtips.org/tag/altar/feed"
+            },
+            {
+                "name": "Console Table",
+                "url": "https://sketchup.cgtips.org/furniture/console-table/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/console-table/feed"
+            },
+            {
+                "name": "Chair",
+                "url": "https://sketchup.cgtips.org/furniture/chair/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/chair/feed"
+            },
+            {
+                "name": "Massage Chair",
+                "url": "https://sketchup.cgtips.org/furniture/massage-chair/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/massage-chair/feed"
+            },
+            {
+                "name": "Bed",
+                "url": "https://sketchup.cgtips.org/furniture/bed/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/bed/feed"
+            },
+            {
+                "name": "Bed Side Table",
+                "url": "/furniture/bed-side-table/",
+                "feed_url": "/furniture/bed-side-table/feed"
+            },
+            {
+                "name": "Bench",
+                "url": "https://sketchup.cgtips.org/furniture/bench/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/bench/feed"
+            },
+            {
+                "name": "Sideboard & Chest of drawer",
+                "url": "https://sketchup.cgtips.org/furniture/sideboard-chest-of-drawer/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/sideboard-chest-of-drawer/feed"
+            },
+            {
+                "name": "Office furniture",
+                "url": "https://sketchup.cgtips.org/furniture/office-furniture/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/office-furniture/feed"
+            },
+            {
+                "name": "Reception Desk",
+                "url": "https://sketchup.cgtips.org/furniture/reception-desk/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/reception-desk/feed"
+            },
+            {
+                "name": "Restaurant Furniture",
+                "url": "https://sketchup.cgtips.org/furniture/restaurant-furniture/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/restaurant-furniture/feed"
+            },
+            {
+                "name": "Outdoor",
+                "url": "https://sketchup.cgtips.org/furniture/outdoor/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/outdoor/feed"
+            },
+            {
+                "name": "Armchair",
+                "url": "https://sketchup.cgtips.org/furniture/arm-chair/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/arm-chair/feed"
+            },
+            {
+                "name": "Bar Stool",
+                "url": "https://sketchup.cgtips.org/furniture/bar-stool/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/bar-stool/feed"
+            },
+            {
+                "name": "Other soft seating",
+                "url": "https://sketchup.cgtips.org/furniture/other-soft-seating/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/other-soft-seating/feed"
+            },
+            {
+                "name": "Table + Chair",
+                "url": "https://sketchup.cgtips.org/furniture/table-chair/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/table-chair/feed"
+            },
+            {
+                "name": "Other",
+                "url": "https://sketchup.cgtips.org/furniture/other/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/other/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Kitchen",
+            "url": "https://sketchup.cgtips.org/kitchen/",
+            "feed_url": "https://sketchup.cgtips.org/kitchen/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Tableware",
+                "url": "https://sketchup.cgtips.org/kitchen/tableware/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/tableware/feed"
+            },
+            {
+                "name": "Kitchen Cabinets",
+                "url": "https://sketchup.cgtips.org/kitchen/kitchen-model/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/kitchen-model/feed"
+            },
+            {
+                "name": "Kitchen Island",
+                "url": "https://sketchup.cgtips.org/kitchen/kitchen-island/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/kitchen-island/feed"
+            },
+            {
+                "name": "Kitchen appliance",
+                "url": "https://sketchup.cgtips.org/kitchen/kitchen-appliance/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/kitchen-appliance/feed"
+            },
+            {
+                "name": "Other kitchen accessories",
+                "url": "https://sketchup.cgtips.org/kitchen/other-kitchen-accessories/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/other-kitchen-accessories/feed"
+            },
+            {
+                "name": "Food and drinks",
+                "url": "https://sketchup.cgtips.org/kitchen/food-and-drinks/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/food-and-drinks/feed"
+            },
+            {
+                "name": "Sink",
+                "url": "https://sketchup.cgtips.org/kitchen/sink/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/sink/feed"
+            },
+            {
+                "name": "Faucet",
+                "url": "https://sketchup.cgtips.org/kitchen/faucet-kitchen/",
+                "feed_url": "https://sketchup.cgtips.org/kitchen/faucet-kitchen/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Childroom",
+            "url": "https://sketchup.cgtips.org/childroom/",
+            "feed_url": "https://sketchup.cgtips.org/childroom/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Full furniture set",
+                "url": "https://sketchup.cgtips.org/childroom/full-furniture-set/",
+                "feed_url": "https://sketchup.cgtips.org/childroom/full-furniture-set/feed"
+            },
+            {
+                "name": "Bed",
+                "url": "https://sketchup.cgtips.org/childroom/bed-childroom/",
+                "feed_url": "https://sketchup.cgtips.org/childroom/bed-childroom/feed"
+            },
+            {
+                "name": "Table + Chair",
+                "url": "https://sketchup.cgtips.org/furniture/table-chair/",
+                "feed_url": "https://sketchup.cgtips.org/furniture/table-chair/feed"
+            },
+            {
+                "name": "Wardrobe",
+                "url": "https://sketchup.cgtips.org/childroom/wardrobe/",
+                "feed_url": "https://sketchup.cgtips.org/childroom/wardrobe/feed"
+            },
+            {
+                "name": "Kids’ nightstand",
+                "url": "https://sketchup.cgtips.org/tag/kids-nightstand/",
+                "feed_url": "https://sketchup.cgtips.org/tag/kids-nightstand/feed"
+            },
+            {
+                "name": "Toy",
+                "url": "https://sketchup.cgtips.org/childroom/toy/",
+                "feed_url": "https://sketchup.cgtips.org/childroom/toy/feed"
+            },
+            {
+                "name": "Miscellaneous",
+                "url": "https://sketchup.cgtips.org/childroom/miscellaneous/",
+                "feed_url": "https://sketchup.cgtips.org/childroom/miscellaneous/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Bathroom",
+            "url": "https://sketchup.cgtips.org/bathroom/",
+            "feed_url": "https://sketchup.cgtips.org/bathroom/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Wash basin",
+                "url": "https://sketchup.cgtips.org/bathroom/wash-basin/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/wash-basin/feed"
+            },
+            {
+                "name": "Toilet and Bidet",
+                "url": "https://sketchup.cgtips.org/bathroom/toilet-and-bidet/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/toilet-and-bidet/feed"
+            },
+            {
+                "name": "Bathtub",
+                "url": "https://sketchup.cgtips.org/bathroom/bathtub/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/bathtub/feed"
+            },
+            {
+                "name": "Shower",
+                "url": "https://sketchup.cgtips.org/bathroom/shower/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/shower/feed"
+            },
+            {
+                "name": "Bathroom furniture",
+                "url": "https://sketchup.cgtips.org/bathroom/bathroom-furniture/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/bathroom-furniture/feed"
+            },
+            {
+                "name": "Faucet",
+                "url": "https://sketchup.cgtips.org/bathroom/faucet/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/faucet/feed"
+            },
+            {
+                "name": "Towel rail",
+                "url": "https://sketchup.cgtips.org/bathroom/towel-rail/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/towel-rail/feed"
+            },
+            {
+                "name": "Bathroom accessories",
+                "url": "https://sketchup.cgtips.org/bathroom/bathroom-accessories/",
+                "feed_url": "https://sketchup.cgtips.org/bathroom/bathroom-accessories/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Decoration",
+            "url": "https://sketchup.cgtips.org/decoration/",
+            "feed_url": "https://sketchup.cgtips.org/decoration/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Decorative plaster",
+                "url": "https://sketchup.cgtips.org/decoration/decorative-plaster/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/decorative-plaster/feed"
+            },
+            {
+                "name": "3D panel",
+                "url": "https://sketchup.cgtips.org/decoration/3d-panel/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/3d-panel/feed"
+            },
+            {
+                "name": "Breeze blocks",
+                "url": "https://sketchup.cgtips.org/decoration/breeze-blocks/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/breeze-blocks/feed"
+            },
+            {
+                "name": "Plant",
+                "url": "https://sketchup.cgtips.org/decoration/plant/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/plant/feed"
+            },
+            {
+                "name": "Curtain",
+                "url": "https://sketchup.cgtips.org/decoration/curtain/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/curtain/feed"
+            },
+            {
+                "name": "Mirror",
+                "url": "https://sketchup.cgtips.org/decoration/mirror/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/mirror/feed"
+            },
+            {
+                "name": "Frame",
+                "url": "https://sketchup.cgtips.org/decoration/frame/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/frame/feed"
+            },
+            {
+                "name": "Vase",
+                "url": "https://sketchup.cgtips.org/decoration/vase/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/vase/feed"
+            },
+            {
+                "name": "Books",
+                "url": "https://sketchup.cgtips.org/decoration/books/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/books/feed"
+            },
+            {
+                "name": "Pillows",
+                "url": "https://sketchup.cgtips.org/decoration/pillows/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/pillows/feed"
+            },
+            {
+                "name": "Carpets",
+                "url": "https://sketchup.cgtips.org/decoration/carpets/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/carpets/feed"
+            },
+            {
+                "name": "Decorative set",
+                "url": "https://sketchup.cgtips.org/decoration/decorative-set/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/decorative-set/feed"
+            },
+            {
+                "name": "Sculpture",
+                "url": "https://sketchup.cgtips.org/decoration/sculpture/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/sculpture/feed"
+            },
+            {
+                "name": "Wall Decor",
+                "url": "https://sketchup.cgtips.org/decoration/wall-decor/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/wall-decor/feed"
+            },
+            {
+                "name": "Watches and Clocks",
+                "url": "https://sketchup.cgtips.org/decoration/watches-and-clocks/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/watches-and-clocks/feed"
+            },
+            {
+                "name": "Other decorative objects",
+                "url": "https://sketchup.cgtips.org/decoration/other-decorative-objects/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/other-decorative-objects/feed"
+            },
+            {
+                "name": "Clothes and shoes",
+                "url": "https://sketchup.cgtips.org/decoration/clothes-and-shoes/",
+                "feed_url": "https://sketchup.cgtips.org/decoration/clothes-and-shoes/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Lighting",
+            "url": "https://sketchup.cgtips.org/lighting/",
+            "feed_url": "https://sketchup.cgtips.org/lighting/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Ceiling light",
+                "url": "https://sketchup.cgtips.org/lighting/ceiling-light/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/ceiling-light/feed"
+            },
+            {
+                "name": "Wall light",
+                "url": "https://sketchup.cgtips.org/lighting/wall-light/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/wall-light/feed"
+            },
+            {
+                "name": "Floor lamp",
+                "url": "https://sketchup.cgtips.org/lighting/floor-lamp/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/floor-lamp/feed"
+            },
+            {
+                "name": "Table lamp",
+                "url": "https://sketchup.cgtips.org/lighting/table-lamp/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/table-lamp/feed"
+            },
+            {
+                "name": "Spot light",
+                "url": "https://sketchup.cgtips.org/lighting/spot-light/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/spot-light/feed"
+            },
+            {
+                "name": "Street lighting",
+                "url": "https://sketchup.cgtips.org/lighting/street-lighting/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/street-lighting/feed"
+            },
+            {
+                "name": "Technical lighting",
+                "url": "https://sketchup.cgtips.org/lighting/technical-lighting/",
+                "feed_url": "https://sketchup.cgtips.org/lighting/technical-lighting/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Technology",
+            "url": "https://sketchup.cgtips.org/technology/",
+            "feed_url": "https://sketchup.cgtips.org/technology/feed"
+        },
+        "subcategories": [
+            {
+                "name": "PCs & Other electrics",
+                "url": "https://sketchup.cgtips.org/technology/pcs-other-electrics/",
+                "feed_url": "https://sketchup.cgtips.org/technology/pcs-other-electrics/feed"
+            },
+            {
+                "name": "Household appliance",
+                "url": "https://sketchup.cgtips.org/technology/household-appliance/",
+                "feed_url": "https://sketchup.cgtips.org/technology/household-appliance/feed"
+            },
+            {
+                "name": "TV",
+                "url": "https://sketchup.cgtips.org/technology/tv/",
+                "feed_url": "https://sketchup.cgtips.org/technology/tv/feed"
+            },
+            {
+                "name": "Phones",
+                "url": "https://sketchup.cgtips.org/technology/phones/",
+                "feed_url": "https://sketchup.cgtips.org/technology/phones/feed"
+            },
+            {
+                "name": "Audio tech",
+                "url": "https://sketchup.cgtips.org/technology/audio-tech/",
+                "feed_url": "https://sketchup.cgtips.org/technology/audio-tech/feed"
+            },
+            {
+                "name": "Miscellaneous",
+                "url": "https://sketchup.cgtips.org/technology/miscellaneous-technology/",
+                "feed_url": "https://sketchup.cgtips.org/technology/miscellaneous-technology/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Other Models",
+            "url": "https://sketchup.cgtips.org/other-models/",
+            "feed_url": "https://sketchup.cgtips.org/other-models/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Windows",
+                "url": "https://sketchup.cgtips.org/other-models/windows/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/windows/feed"
+            },
+            {
+                "name": "Doors",
+                "url": "https://sketchup.cgtips.org/other-models/doors/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/doors/feed"
+            },
+            {
+                "name": "Fence gate",
+                "url": "https://sketchup.cgtips.org/tag/fence-gate/",
+                "feed_url": "https://sketchup.cgtips.org/tag/fence-gate/feed"
+            },
+            {
+                "name": "Handrail",
+                "url": "https://sketchup.cgtips.org/other-models/handrail/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/handrail/feed"
+            },
+            {
+                "name": "Fireplace",
+                "url": "https://sketchup.cgtips.org/other-models/fireplace/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/fireplace/feed"
+            },
+            {
+                "name": "Aquarium Tank",
+                "url": "https://sketchup.cgtips.org/tag/aquarium-tank/",
+                "feed_url": "https://sketchup.cgtips.org/tag/aquarium-tank/feed"
+            },
+            {
+                "name": "Radiator",
+                "url": "https://sketchup.cgtips.org/other-models/radiator/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/radiator/feed"
+            },
+            {
+                "name": "Shop",
+                "url": "https://sketchup.cgtips.org/other-models/shop/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/shop/feed"
+            },
+            {
+                "name": "Transport",
+                "url": "https://sketchup.cgtips.org/other-models/transport/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/transport/feed"
+            },
+            {
+                "name": "Sports",
+                "url": "https://sketchup.cgtips.org/other-models/sports/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/sports/feed"
+            },
+            {
+                "name": "Human character",
+                "url": "https://sketchup.cgtips.org/other-models/people/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/people/feed"
+            },
+            {
+                "name": "Staircase",
+                "url": "https://sketchup.cgtips.org/other-models/staircase/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/staircase/feed"
+            },
+            {
+                "name": "Musical instrument",
+                "url": "https://sketchup.cgtips.org/other-models/musical-instrument/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/musical-instrument/feed"
+            },
+            {
+                "name": "Beauty salon",
+                "url": "https://sketchup.cgtips.org/other-models/beauty-salon/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/beauty-salon/feed"
+            },
+            {
+                "name": "Weaponry",
+                "url": "https://sketchup.cgtips.org/other-models/weaponry/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/weaponry/feed"
+            },
+            {
+                "name": "Restaurant",
+                "url": "https://sketchup.cgtips.org/other-models/restaurant/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/restaurant/feed"
+            },
+            {
+                "name": "Creature",
+                "url": "https://sketchup.cgtips.org/other-models/creature/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/creature/feed"
+            },
+            {
+                "name": "Billiards",
+                "url": "https://sketchup.cgtips.org/other-models/billiards/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/billiards/feed"
+            },
+            {
+                "name": "Animal",
+                "url": "https://sketchup.cgtips.org/other-models/animal/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/animal/feed"
+            },
+            {
+                "name": "Pet Furniture",
+                "url": "https://sketchup.cgtips.org/other-models/pet-furniture/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/pet-furniture/feed"
+            },
+            {
+                "name": "Miscellaneous",
+                "url": "/other-models/miscellaneous-other-models/",
+                "feed_url": "/other-models/miscellaneous-other-models/feed"
+            },
+            {
+                "name": "Other Models",
+                "url": "https://sketchup.cgtips.org/other-models/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Scenes",
+            "url": "https://sketchup.cgtips.org/scenes/",
+            "feed_url": "https://sketchup.cgtips.org/scenes/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Exteriors",
+                "url": "https://sketchup.cgtips.org/scenes/exteriors/",
+                "feed_url": "https://sketchup.cgtips.org/scenes/exteriors/feed"
+            },
+            {
+                "name": "Interiors",
+                "url": "https://sketchup.cgtips.org/scenes/interiors/",
+                "feed_url": "https://sketchup.cgtips.org/scenes/interiors/feed"
+            },
+            {
+                "name": "Altar Room",
+                "url": "https://sketchup.cgtips.org/tag/altar-room/",
+                "feed_url": "https://sketchup.cgtips.org/tag/altar-room/feed"
+            },
+            {
+                "name": "Bedroom",
+                "url": "https://sketchup.cgtips.org/tag/bedroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/bedroom/feed"
+            },
+            {
+                "name": "Living Room",
+                "url": "https://sketchup.cgtips.org/tag/living-room/",
+                "feed_url": "https://sketchup.cgtips.org/tag/living-room/feed"
+            },
+            {
+                "name": "Dining Room",
+                "url": "https://sketchup.cgtips.org/tag/diningroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/diningroom/feed"
+            },
+            {
+                "name": "Kitchen Interior",
+                "url": "https://sketchup.cgtips.org/tag/kitchen-interior/",
+                "feed_url": "https://sketchup.cgtips.org/tag/kitchen-interior/feed"
+            },
+            {
+                "name": "Children Room",
+                "url": "https://sketchup.cgtips.org/tag/children-room/",
+                "feed_url": "https://sketchup.cgtips.org/tag/children-room/feed"
+            },
+            {
+                "name": "Bathroom",
+                "url": "https://sketchup.cgtips.org/tag/bathroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/bathroom/feed"
+            },
+            {
+                "name": "Apartment",
+                "url": "https://sketchup.cgtips.org/tag/apartment/",
+                "feed_url": "https://sketchup.cgtips.org/tag/apartment/feed"
+            },
+            {
+                "name": "Restaurant",
+                "url": "https://sketchup.cgtips.org/tag/restaurant/",
+                "feed_url": "https://sketchup.cgtips.org/tag/restaurant/feed"
+            },
+            {
+                "name": "Coffee",
+                "url": "https://sketchup.cgtips.org/tag/coffee/",
+                "feed_url": "https://sketchup.cgtips.org/tag/coffee/feed"
+            },
+            {
+                "name": "Spa, Beauty salon",
+                "url": "https://sketchup.cgtips.org/other-models/beauty-salon/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/beauty-salon/feed"
+            },
+            {
+                "name": "Tea room",
+                "url": "https://sketchup.cgtips.org/tag/tea-room/",
+                "feed_url": "https://sketchup.cgtips.org/tag/tea-room/feed"
+            },
+            {
+                "name": "Showroom",
+                "url": "https://sketchup.cgtips.org/tag/showroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/showroom/feed"
+            },
+            {
+                "name": "Shop",
+                "url": "https://sketchup.cgtips.org/other-models/shop/",
+                "feed_url": "https://sketchup.cgtips.org/other-models/shop/feed"
+            },
+            {
+                "name": "Office",
+                "url": "https://sketchup.cgtips.org/tag/officeroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/officeroom/feed"
+            },
+            {
+                "name": "Hospital",
+                "url": "https://sketchup.cgtips.org/tag/hospital/",
+                "feed_url": "https://sketchup.cgtips.org/tag/hospital/feed"
+            },
+            {
+                "name": "Preschooler Classroom",
+                "url": "https://sketchup.cgtips.org/tag/preschooler-classroom/",
+                "feed_url": "https://sketchup.cgtips.org/tag/preschooler-classroom/feed"
+            },
+            {
+                "name": "Garden Landscape",
+                "url": "https://sketchup.cgtips.org/tag/landscape/",
+                "feed_url": "https://sketchup.cgtips.org/tag/landscape/feed"
+            },
+            {
+                "name": "Gazebo",
+                "url": "https://sketchup.cgtips.org/tag/gazebo/",
+                "feed_url": "https://sketchup.cgtips.org/tag/gazebo/feed"
+            },
+            {
+                "name": "Other architectural elements",
+                "url": "https://sketchup.cgtips.org/scenes/other-architectural-elements/",
+                "feed_url": "https://sketchup.cgtips.org/scenes/other-architectural-elements/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Textures",
+            "url": "https://sketchup.cgtips.org/textures/",
+            "feed_url": "https://sketchup.cgtips.org/textures/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Wood",
+                "url": "https://sketchup.cgtips.org/textures/wood/",
+                "feed_url": "https://sketchup.cgtips.org/textures/wood/feed"
+            },
+            {
+                "name": "Floor coverings",
+                "url": "https://sketchup.cgtips.org/textures/floor-coverings/",
+                "feed_url": "https://sketchup.cgtips.org/textures/floor-coverings/feed"
+            },
+            {
+                "name": "Wall covering",
+                "url": "https://sketchup.cgtips.org/textures/wall-covering/",
+                "feed_url": "https://sketchup.cgtips.org/textures/wall-covering/feed"
+            },
+            {
+                "name": "Metal",
+                "url": "https://sketchup.cgtips.org/textures/metal/",
+                "feed_url": "https://sketchup.cgtips.org/textures/metal/feed"
+            },
+            {
+                "name": "Stone",
+                "url": "https://sketchup.cgtips.org/textures/stone/",
+                "feed_url": "https://sketchup.cgtips.org/textures/stone/feed"
+            },
+            {
+                "name": "Fabric",
+                "url": "https://sketchup.cgtips.org/textures/fabric/",
+                "feed_url": "https://sketchup.cgtips.org/textures/fabric/feed"
+            },
+            {
+                "name": "Natural materials",
+                "url": "https://sketchup.cgtips.org/textures/natural-materials/",
+                "feed_url": "https://sketchup.cgtips.org/textures/natural-materials/feed"
+            },
+            {
+                "name": "Miscellaneous",
+                "url": "https://sketchup.cgtips.org/textures/t-miscellaneous/",
+                "feed_url": "https://sketchup.cgtips.org/textures/t-miscellaneous/feed"
+            },
+            {
+                "name": "HDRI",
+                "url": "https://sketchup.cgtips.org/textures/hdri/",
+                "feed_url": "https://sketchup.cgtips.org/textures/hdri/feed"
+            },
+            {
+                "name": "Panorama",
+                "url": "https://sketchup.cgtips.org/textures/panorama/",
+                "feed_url": "https://sketchup.cgtips.org/textures/panorama/feed"
+            },
+            {
+                "name": "Tile",
+                "url": "https://sketchup.cgtips.org/textures/tile/",
+                "feed_url": "https://sketchup.cgtips.org/textures/tile/feed"
+            },
+            {
+                "name": "Leather",
+                "url": "https://sketchup.cgtips.org/textures/leather/",
+                "feed_url": "https://sketchup.cgtips.org/textures/leather/feed"
+            },
+            {
+                "name": "Brick",
+                "url": "https://sketchup.cgtips.org/textures/brick/",
+                "feed_url": "https://sketchup.cgtips.org/textures/brick/feed"
+            },
+            {
+                "name": "Rug",
+                "url": "https://sketchup.cgtips.org/textures/rug/",
+                "feed_url": "https://sketchup.cgtips.org/textures/rug/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Materials",
+            "url": "https://sketchup.cgtips.org/materials/",
+            "feed_url": "https://sketchup.cgtips.org/materials/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Wood",
+                "url": "https://sketchup.cgtips.org/materials/wood-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/wood-materials/feed"
+            },
+            {
+                "name": "Metal",
+                "url": "https://sketchup.cgtips.org/materials/metal-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/metal-materials/feed"
+            },
+            {
+                "name": "Leather",
+                "url": "https://sketchup.cgtips.org/materials/leather-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/leather-materials/feed"
+            },
+            {
+                "name": "Plastic",
+                "url": "https://sketchup.cgtips.org/materials/plastic/",
+                "feed_url": "https://sketchup.cgtips.org/materials/plastic/feed"
+            },
+            {
+                "name": "Stone",
+                "url": "https://sketchup.cgtips.org/materials/stone-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/stone-materials/feed"
+            },
+            {
+                "name": "Glass",
+                "url": "https://sketchup.cgtips.org/materials/glass/",
+                "feed_url": "https://sketchup.cgtips.org/materials/glass/feed"
+            },
+            {
+                "name": "Liquid",
+                "url": "https://sketchup.cgtips.org/materials/liquid/",
+                "feed_url": "https://sketchup.cgtips.org/materials/liquid/feed"
+            },
+            {
+                "name": "Concrete",
+                "url": "https://sketchup.cgtips.org/materials/concrete/",
+                "feed_url": "https://sketchup.cgtips.org/materials/concrete/feed"
+            },
+            {
+                "name": "Miscellaneous",
+                "url": "https://sketchup.cgtips.org/materials/miscellaneous-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/miscellaneous-materials/feed"
+            },
+            {
+                "name": "Tile",
+                "url": "https://sketchup.cgtips.org/materials/tile-materials/",
+                "feed_url": "https://sketchup.cgtips.org/materials/tile-materials/feed"
+            }
+        ]
+    },
+    {
+        "heading": {
+            "name": "Scripts",
+            "url": "https://sketchup.cgtips.org/scripts/",
+            "feed_url": "https://sketchup.cgtips.org/scripts/feed"
+        },
+        "subcategories": [
+            {
+                "name": "Scripts",
+                "url": "https://sketchup.cgtips.org/scripts/",
+                "feed_url": "https://sketchup.cgtips.org/scripts/feed"
+            },
+            {
+                "name": "Enscape model",
+                "url": "https://sketchup.cgtips.org/tag/enscape-model/",
+                "feed_url": "https://sketchup.cgtips.org/tag/enscape-model/feed"
+            },
+            {
+                "name": "Enscape setting",
+                "url": "https://sketchup.cgtips.org/tag/enscape-setting/",
+                "feed_url": "https://sketchup.cgtips.org/tag/enscape-setting/feed"
+            },
+            {
+                "name": "Enscape Material",
+                "url": "https://sketchup.cgtips.org/tag/enscape-material/",
+                "feed_url": "https://sketchup.cgtips.org/tag/enscape-material/feed"
+            }
+        ]
+    }
+]
