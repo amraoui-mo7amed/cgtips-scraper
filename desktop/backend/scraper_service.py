@@ -24,6 +24,7 @@ if str(ROOT_DIR) not in sys.path:
 
 import config
 import cache_io
+import history
 from config import (
     BASE_DIR,
     CATEGORIES_FILE,
@@ -210,6 +211,16 @@ class ScraperService:
         data = library_manager.scan_library(search=search or None, category_filter=cat_filter)
 
         items = data.get("items", [])
+        if not search and not cat_filter:
+            # Keep the download history in step with the models on disk, so it can be
+            # carried to another machine without the files.
+            missing = [
+                {"title": i["title"], "link": i.get("article_url") or "",
+                 "category": i["category"], "subcategory": i["subcategory"]}
+                for i in items if i.get("has_model") and not history.has(i.get("article_url") or "", i["title"])
+            ]
+            if missing:
+                history.add_many(missing)
         for item in items:
             raw_imgs = item.get("images", [])
             imgs_file_urls = []
@@ -351,6 +362,15 @@ class ScraperService:
         return cache_io.import_cache(src_zip, progress_cb=progress_cb)
 
     # --- Library import ---
+
+    def import_history(self, path: str) -> Dict[str, int]:
+        return history.import_from(path)
+
+    def export_history(self, path: str) -> int:
+        return history.export_to(path)
+
+    def history_count(self) -> int:
+        return history.count()
 
     def import_library(self, paths: List[str], move: bool = False, log_cb=None, progress_cb=None) -> Dict[str, Any]:
         return library_manager.import_paths(paths, move=move, log_cb=log_cb, progress_cb=progress_cb)

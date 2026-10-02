@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 import requests
 
 import config
+import history
 from browser_manager import BrowserManager
 from config import (
     CATEGORIES_FILE,
@@ -287,6 +288,7 @@ def resolve_and_download_single_article(
                 if model_file:
                     _log(f"Model saved: {Path(model_file).name} ({os.path.getsize(model_file)} bytes)")
                     result["success"] = True
+                    history.add(article_url, title)
                 else:
                     _log("Model download failed (quota or file unreachable)")
             else:
@@ -428,6 +430,12 @@ def bulk_download(
             _emit()
 
             folder = article_folder_for(item["category"], item["subcategory"], item["title"]) if item["title"] else None
+            if skip_existing and download_model and history.has(item["link"], item["title"]):
+                state["skipped"] += 1
+                state["done"] += 1
+                _log(f"Skipped (in download history): {label[:70]}")
+                _emit()
+                continue
             if skip_existing and folder and _article_complete(folder, download_model, download_imgs):
                 state["skipped"] += 1
                 state["done"] += 1

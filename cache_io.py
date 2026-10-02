@@ -6,6 +6,7 @@ A cache archive is a plain zip containing:
     manifest.json          - metadata (format version, creation time, counts)
     categories.json        - scraped category taxonomy
     selected_feeds.json    - last feed session (entries, image/model state)
+    download_history.json  - articles already downloaded (skipped by bulk downloads)
     cache/images/<md5>.img - cached thumbnails
 """
 
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 import config
+import history
 
 logger = logging.getLogger("cache_io")
 
@@ -31,6 +33,7 @@ def _json_targets() -> Dict[str, Path]:
     return {
         "categories.json": Path(config.CATEGORIES_FILE),
         "selected_feeds.json": Path(config.SELECTED_FEEDS_FILE),
+        "download_history.json": history.history_file(),
     }
 
 
@@ -114,6 +117,18 @@ def import_cache(
             expected = list if name == "categories.json" else dict
             if not isinstance(data, expected):
                 raise ValueError(f"{name} has an unexpected structure")
+            if name == "download_history.json":
+                # Merge rather than replace, so this machine's own history is kept.
+                tmp = dest.with_suffix(".import.tmp")
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                try:
+                    history.import_from(str(tmp))
+                finally:
+                    tmp.unlink(missing_ok=True)
+                restored_json.append(name)
+                done += 1
+                continue
             if dest.exists() and not overwrite:
                 done += 1
                 continue

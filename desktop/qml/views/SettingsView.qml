@@ -274,6 +274,67 @@ Item {
                 }
             }
 
+            // Download History Card (skip already-downloaded articles on any machine)
+            Rectangle {
+                Layout.fillWidth: true
+                height: historyCol.implicitHeight + 40
+                radius: Theme.radiusLg
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+
+                ColumnLayout {
+                    id: historyCol
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 14
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Download History"
+                            color: Theme.textPrimary
+                            font.pixelSize: 15
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: Bridge.historyCount + " articles"
+                            color: Theme.primaryLight
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        text: "Articles whose model was already downloaded. Bulk downloads skip them and feed cards show them as "
+                            + "Downloaded, even on a computer that doesn't have the files. Export it here and import it on the "
+                            + "other computer. Import also accepts the old scraper's selected_feeds.json."
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        ActionButton {
+                            text: "Import history..."
+                            icon: Icons.fileImport
+                            primary: true
+                            enabled: !Bridge.maintenanceBusy
+                            onClicked: Bridge.importHistory()
+                        }
+                        ActionButton {
+                            text: "Export history..."
+                            icon: Icons.fileExport
+                            enabled: !Bridge.maintenanceBusy
+                            onClicked: Bridge.exportHistory()
+                        }
+                    }
+                }
+            }
+
             // Cache Backup Card (export / import)
             Rectangle {
                 Layout.fillWidth: true

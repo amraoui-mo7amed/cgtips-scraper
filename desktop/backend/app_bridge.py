@@ -24,11 +24,12 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFileDialog
 
 import config
+import history
 from .library import format_bytes as _fmt_bytes
 
 
 def _title_key(title: str) -> str:
-    return "t:" + "".join(ch for ch in (title or "").lower() if ch.isalnum())[:60]
+    return history.title_key(title)
 
 
 def _build_downloaded_index(library_items: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -47,7 +48,8 @@ def _mark_downloaded(feed_items: List[Dict[str, Any]], index: Dict[str, str]) ->
     out = []
     for e in feed_items:
         folder = index.get((e.get("link") or "").rstrip("/")) or index.get(_title_key(e.get("title", "")))
-        out.append(dict(e, downloaded=bool(folder), local_folder=folder or ""))
+        downloaded = bool(folder) or history.has(e.get("link") or "", e.get("title") or "")
+        out.append(dict(e, downloaded=downloaded, local_folder=folder or ""))
     return out
 from .scraper_service import scraper_service
 
@@ -108,6 +110,7 @@ class AppBridge(QObject):
     maintenanceChanged = Signal()
     libraryImported = Signal()
     downloadJobsChanged = Signal()
+    historyChanged = Signal()
 
     # User notification & progress signals
     toast = Signal(str, str)  # (type: 'info'|'success'|'warning'|'error', message)
@@ -189,6 +192,10 @@ class AppBridge(QObject):
     @Property("QVariant", notify=downloadJobsChanged)
     def downloadJobs(self) -> List[Dict[str, Any]]:
         return self._jobs
+
+    @Property(int, notify=historyChanged)
+    def historyCount(self) -> int:
+        return history.count()
 
     @Property(int, notify=downloadJobsChanged)
     def activeJobCount(self) -> int:
@@ -474,6 +481,7 @@ class AppBridge(QObject):
                 if self._feed_items:
                     self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
                     self.feedItemsChanged.emit()
+            self.historyChanged.emit()
             self._library_items = items
             self._library_total = res.get("total", len(items))
             self._library_loading = False
@@ -784,6 +792,36 @@ class AppBridge(QObject):
                 raise
 
         self._run_maintenance("Importing downloads into the library...", _task, _done)
+
+    @Slot()
+    def importHistory(self):
+        """Merges a download history (or an old selected_feeds.json) so those articles aren't downloaded again."""
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Import download history", str(Path.home()),
+            "Download history or feeds file (*.json)",
+        )
+        if not path:
+            return
+
+        def _done(r):
+            self.historyChanged.emit()
+            self.loadLibrary()
+            return (f"Download history: {r['added']} new articles added ({r['downloaded']} of {r['found']} "
+                    f"in the file were downloaded). {r['total']} articles will be skipped.")
+
+        self._run_maintenance("Importing download history...", lambda: self.service.import_history(path), _done)
+
+    @Slot()
+    def exportHistory(self):
+        path, _ = QFileDialog.getSaveFileName(
+            None, "Export download history", str(Path.home() / "download_history.json"), "Download history (*.json)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        self._run_maintenance("Exporting download history...", lambda: self.service.export_history(path),
+                              lambda n: f"Download history exported: {n} articles")
 
     @Slot(bool)
     def importLibraryFolder(self, move: bool = False):
