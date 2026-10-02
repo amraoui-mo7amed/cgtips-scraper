@@ -1,3 +1,4 @@
+import json
 import socket
 import os
 import sys
@@ -66,8 +67,67 @@ else:
 DATA_DIR = Path(config("DATA_DIR", default=DEFAULT_DATA_DIR))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-FEEDS_DIR = Path(config("FEEDS_DIR", default=DEFAULT_FEEDS_DIR))
-FEEDS_DIR.mkdir(parents=True, exist_ok=True)
+# Image thumbnail cache (exported/imported by cache_io)
+IMAGE_CACHE_DIR = DATA_DIR / "cache" / "images"
+
+# User settings persisted next to the default data dir so they survive a
+# storage-location change (the settings file itself never moves).
+SETTINGS_FILE = Path(DEFAULT_DATA_DIR) / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _usable_dir(path) -> "Path | None":
+    """Returns the resolved directory if it can be created and written to."""
+    if not path or not str(path).strip():
+        return None
+    try:
+        p = Path(path).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        probe = p / ".cgtips_write_test"
+        probe.write_text("ok")
+        probe.unlink()
+        return p.resolve()
+    except Exception:
+        return None
+
+
+# Storage location: a path chosen in the app wins over the .env value.
+# Always read it as `config.FEEDS_DIR` (not `from config import FEEDS_DIR`)
+# so a runtime change via set_feeds_dir() is picked up everywhere.
+FEEDS_DIR = (
+    _usable_dir(load_settings().get("feeds_dir") or "")
+    or _usable_dir(config("FEEDS_DIR", default=DEFAULT_FEEDS_DIR))
+    or _usable_dir(DEFAULT_FEEDS_DIR)
+    or Path(DEFAULT_FEEDS_DIR)
+)
+
+
+def set_feeds_dir(path) -> Path:
+    """Switches the download/library directory at runtime and persists it."""
+    global FEEDS_DIR
+    p = _usable_dir(path)
+    if p is None:
+        raise ValueError(f"Directory is not writable: {path}")
+    settings = load_settings()
+    settings["feeds_dir"] = str(p)
+    save_settings(settings)
+    FEEDS_DIR = p
+    return p
+
 
 # Helper for locating data files in data/ or root directory
 def _resolve_data_file(filename: str) -> Path:

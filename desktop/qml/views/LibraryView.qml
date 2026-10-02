@@ -8,6 +8,7 @@ import "../components"
 Item {
     id: root
     signal openGallery(var images, string title)
+    property bool moveOnImport: false
 
     ColumnLayout {
         anchors.fill: parent
@@ -100,6 +101,29 @@ Item {
                 }
             }
 
+            // Import already-downloaded models
+            ActionButton {
+                implicitHeight: 40
+                text: "Import folder"
+                icon: Icons.fileImport
+                enabled: !Bridge.maintenanceBusy
+                onClicked: Bridge.importLibraryFolder(root.moveOnImport)
+            }
+            ActionButton {
+                implicitHeight: 40
+                text: "Import files"
+                icon: Icons.upload
+                enabled: !Bridge.maintenanceBusy
+                onClicked: Bridge.importLibraryFiles(root.moveOnImport)
+            }
+            ActionButton {
+                implicitHeight: 40
+                text: root.moveOnImport ? "Moves files" : "Copies files"
+                icon: root.moveOnImport ? Icons.squareCheck : Icons.copy
+                checked: root.moveOnImport
+                onClicked: root.moveOnImport = !root.moveOnImport
+            }
+
             // Open Folder in Finder Button
             Rectangle {
                 width: 40
@@ -152,8 +176,8 @@ Item {
 
             BusyIndicator {
                 anchors.centerIn: parent
-                running: Bridge.libraryLoading
-                visible: Bridge.libraryLoading
+                running: Bridge.libraryLoading || Bridge.maintenanceBusy
+                visible: Bridge.libraryLoading || Bridge.maintenanceBusy
             }
 
             // Empty State
@@ -176,7 +200,7 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Text {
-                    text: "You haven't downloaded any 3D models yet.\nUse Explore or Direct Resolver to scrape models."
+                    text: "You haven't downloaded any 3D models yet.\nUse Explore, the Direct Resolver or a bulk download —\nor import models you already have with Import folder / Import files."
                     color: Theme.textMuted
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter

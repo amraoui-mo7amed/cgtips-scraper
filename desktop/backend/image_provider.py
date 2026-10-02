@@ -17,11 +17,11 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from config import DATA_DIR, USER_AGENT
+from config import IMAGE_CACHE_DIR, USER_AGENT
 
 logger = logging.getLogger("image_provider")
 
-CACHE_DIR = DATA_DIR / "cache" / "images"
+CACHE_DIR = IMAGE_CACHE_DIR
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _executor = ThreadPoolExecutor(max_workers=8)

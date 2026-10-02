@@ -53,4 +53,10 @@ Item {
     readonly property string share: "\uf064"
     readonly property string thLarge: "\uf009"
     readonly property string bars: "\uf0c9"
+    readonly property string upload: "\uf093"
+    readonly property string fileImport: "\uf56f"
+    readonly property string fileExport: "\uf56e"
+    readonly property string boxArchive: "\uf187"
+    readonly property string stop: "\uf04d"
+    readonly property string squareCheck: "\uf14a"
 }

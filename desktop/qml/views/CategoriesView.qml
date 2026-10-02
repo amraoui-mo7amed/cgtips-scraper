@@ -17,6 +17,63 @@ Item {
     property bool isGridView: true
     property bool isFeedCopied: false
 
+    // --- Bulk download state ---
+    property var selection: ({})          // link -> {title, link}
+    property int selectionCount: 0
+    property bool wantModels: true
+    property bool wantImages: true
+    property int limitIndex: 0
+    readonly property var limitValues: [0, 10, 25, 50, 100]
+    readonly property int limitValue: limitValues[limitIndex]
+
+    function isSelected(link) { return selection[link] !== undefined }
+
+    function toggleSelect(item) {
+        var next = Object.assign({}, selection)
+        if (next[item.link] !== undefined) delete next[item.link]
+        else next[item.link] = { title: item.title, link: item.link }
+        selection = next
+        selectionCount = Object.keys(next).length
+    }
+
+    function selectAll() {
+        var next = {}
+        for (var i = 0; i < Bridge.feedItems.length; ++i) {
+            var it = Bridge.feedItems[i]
+            if (it.link) next[it.link] = { title: it.title, link: it.link }
+        }
+        selection = next
+        selectionCount = Object.keys(next).length
+    }
+
+    function clearSelection() { selection = ({}); selectionCount = 0 }
+
+    function downloadSelected() {
+        var arr = []
+        for (var k in selection) arr.push(selection[k])
+        Bridge.startBulkArticles(selectedCategoryName, selectedSubcategoryName, arr, wantModels, wantImages)
+        clearSelection()
+    }
+
+    function downloadSubcategory() {
+        Bridge.startBulkSubcategories([{
+            category: selectedCategoryName, subcategory: selectedSubcategoryName, feed_url: selectedFeedUrl
+        }], limitValue, wantModels, wantImages)
+    }
+
+    function downloadWholeCategory() {
+        var groups = []
+        for (var i = 0; i < Bridge.categories.length; ++i) {
+            var cat = Bridge.categories[i]
+            if (cat.title !== selectedCategoryName) continue
+            for (var j = 0; j < cat.subcategories.length; ++j) {
+                var sub = cat.subcategories[j]
+                groups.push({ category: cat.title, subcategory: sub.title, feed_url: sub.feed_url })
+            }
+        }
+        Bridge.startBulkSubcategories(groups, limitValue, wantModels, wantImages)
+    }
+
     Timer {
         id: feedCopyTimer
         interval: 2000
@@ -35,6 +92,9 @@ Item {
         target: Bridge
         function onCategoriesChanged() {
             root.autoSelectFirstSubcategory()
+        }
+        function onFeedItemsChanged() {
+            root.clearSelection()
         }
     }
 
@@ -216,6 +276,60 @@ Item {
                         }
                     }
                 }
+            }
+        }
+
+        // ==========================================
+        // BULK DOWNLOAD TOOLBAR
+        // ==========================================
+        Flow {
+            Layout.fillWidth: true
+            visible: !!root.selectedFeedUrl
+            spacing: 8
+
+            ActionButton {
+                text: root.selectionCount > 0 ? "Clear (" + root.selectionCount + ")" : "Select all"
+                icon: Icons.squareCheck
+                enabled: Bridge.feedItems.length > 0
+                onClicked: root.selectionCount > 0 ? root.clearSelection() : root.selectAll()
+            }
+            ActionButton {
+                text: "Download selected (" + root.selectionCount + ")"
+                icon: Icons.download
+                primary: true
+                enabled: root.selectionCount > 0 && !Bridge.isBulkRunning
+                onClicked: root.downloadSelected()
+            }
+            ActionButton {
+                text: "Whole sub-category"
+                icon: Icons.layerGroup
+                primary: true
+                enabled: !Bridge.isBulkRunning
+                onClicked: root.downloadSubcategory()
+            }
+            ActionButton {
+                text: "Whole category"
+                icon: Icons.cubes
+                primary: true
+                enabled: !Bridge.isBulkRunning
+                onClicked: root.downloadWholeCategory()
+            }
+            ActionButton {
+                text: "Models"
+                icon: Icons.cube
+                checked: root.wantModels
+                onClicked: root.wantModels = !root.wantModels
+            }
+            ActionButton {
+                text: "Images"
+                icon: Icons.image
+                checked: root.wantImages
+                onClicked: root.wantImages = !root.wantImages
+            }
+            ActionButton {
+                text: "Per feed: " + (root.limitValue === 0 ? "all" : root.limitValue)
+                icon: Icons.filter
+                onClicked: root.limitIndex = (root.limitIndex + 1) % root.limitValues.length
             }
         }
 
@@ -425,19 +539,27 @@ Item {
                                 anchors.right: parent.right
                                 anchors.margins: 8
 
-                                // RSS badge
+                                // Selection toggle (bulk download)
                                 Rectangle {
+                                    id: selBadge
+                                    readonly property bool picked: root.isSelected(modelData.link)
                                     width: 26
-                                    height: 22
+                                    height: 24
                                     radius: 4
-                                    color: "#0F172A"
-                                    border.color: "#334155"
+                                    color: picked ? Theme.primary : "#0F172A"
+                                    border.color: picked ? Theme.primaryLight : "#334155"
                                     border.width: 1
                                     FaIcon {
                                         anchors.centerIn: parent
-                                        icon: Icons.rss
-                                        size: 10
-                                        iconColor: "#F59E0B"
+                                        icon: Icons.check
+                                        size: 11
+                                        iconColor: "white"
+                                        visible: selBadge.picked
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleSelect(modelData)
                                     }
                                 }
 

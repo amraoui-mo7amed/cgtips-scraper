@@ -24,6 +24,17 @@ A modern, high-performance native desktop application built with **PySide6 (Qt Q
   - Manage locally downloaded SketchUp models with file sizes and thumbnail previews.
   - Integrated lightbox image gallery.
 
+- **Bulk Download**:
+  - In *Categories & Feeds*, tick articles (checkbox on each card) and press **Download selected**, or download a **whole sub-category** / **whole category** straight from its RSS feeds (optional per-feed limit, models and/or images).
+  - One shared browser, live progress bar with cancel, and automatic skipping of anything already in the library — so an interrupted run can simply be started again.
+  - Files land in `<storage>/<category>/<sub-category>/<article>/`.
+
+- **Storage Location**: change where models are saved from *Settings* (optionally moving existing downloads). The choice is remembered in `data/settings.json`.
+
+- **Cache Export / Import**: *Settings → Cache Backup* packs categories, feed history and thumbnails into one `.zip` and restores it on another machine, so nothing has to be fetched again.
+
+- **Import Existing Downloads**: *Library → Import folder / Import files* adds model archives (`.zip .rar .7z .skp`) and images you already have. Folders laid out as `category/sub-category/article/model/…` keep their structure; loose archives are filed under "Imported". Files are copied (or moved).
+
 - **Cross-Platform Native Binaries**:
   - **macOS**: Native `.app` packaged in `.dmg` and `.zip`.
   - **Windows**: Native standalone `.exe` and portable `.zip`.

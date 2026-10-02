@@ -7,6 +7,8 @@ import "../components"
 
 Item {
     id: root
+    property bool moveExisting: false
+    property bool includeImages: true
 
     Component.onCompleted: {
         Bridge.refreshStatus()
@@ -110,35 +112,45 @@ Item {
                                 }
                             }
 
-                            Rectangle {
-                                width: 140
-                                height: 38
-                                radius: Theme.radiusSm
-                                color: Theme.primary
-
-                                RowLayout {
-                                    anchors.centerIn: parent
-                                    spacing: 6
-                                    FaIcon {
-                                        icon: Icons.folderOpen
-                                        size: 12
-                                        iconColor: "white"
-                                    }
-                                    Text {
-                                        text: "Open in Finder"
-                                        color: "white"
-                                        font.pixelSize: 11
-                                        font.bold: true
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: Bridge.openFolder("")
-                                }
+                            ActionButton {
+                                text: "Change..."
+                                icon: Icons.folder
+                                primary: true
+                                enabled: !Bridge.maintenanceBusy && !Bridge.isBulkRunning
+                                onClicked: Bridge.chooseStorageDir(root.moveExisting)
+                            }
+                            ActionButton {
+                                text: "Open"
+                                icon: Icons.folderOpen
+                                onClicked: Bridge.openFolder("")
                             }
                         }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        ActionButton {
+                            text: "Move existing downloads to the new location"
+                            icon: Icons.squareCheck
+                            checked: root.moveExisting
+                            onClicked: root.moveExisting = !root.moveExisting
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: "Free space: " + (Bridge.statusData.free_space || "—")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        text: "The Library shows whatever is in the storage directory, so you can also point it at a folder "
+                            + "you already have (layout: category / sub-category / article / model + images)."
                     }
 
                     // Scraper Browser Mode
@@ -258,6 +270,70 @@ Item {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // Cache Backup Card (export / import)
+            Rectangle {
+                Layout.fillWidth: true
+                height: backupCol.implicitHeight + 40
+                radius: Theme.radiusLg
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+
+                ColumnLayout {
+                    id: backupCol
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 14
+
+                    Text {
+                        text: "Cache Backup"
+                        color: Theme.textPrimary
+                        font.pixelSize: 15
+                        font.bold: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        text: "Export the categories, feed history and thumbnail cache into one .zip, and import it on another "
+                            + "machine or after a reinstall so nothing has to be fetched again."
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        ActionButton {
+                            text: "Export cache..."
+                            icon: Icons.fileExport
+                            primary: true
+                            enabled: !Bridge.maintenanceBusy
+                            onClicked: Bridge.exportCache(root.includeImages)
+                        }
+                        ActionButton {
+                            text: "Import cache..."
+                            icon: Icons.fileImport
+                            enabled: !Bridge.maintenanceBusy
+                            onClicked: Bridge.importCache()
+                        }
+                        ActionButton {
+                            text: "Include thumbnails"
+                            icon: Icons.image
+                            checked: root.includeImages
+                            onClicked: root.includeImages = !root.includeImages
+                        }
+                    }
+
+                    Text {
+                        visible: Bridge.maintenanceBusy
+                        text: Bridge.maintenanceMessage
+                        color: Theme.primaryLight
+                        font.pixelSize: 11
+                        font.bold: true
                     }
                 }
             }

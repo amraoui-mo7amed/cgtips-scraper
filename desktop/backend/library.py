@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup as bs
 
-from config import FEEDS_DIR, BASE_URL
+import config
+from config import BASE_URL
 
 logger = logging.getLogger("library")
 
@@ -27,10 +28,33 @@ def format_bytes(size_bytes: int) -> str:
     return f"{size:.1f} {units[i]}"
 
 
+MODEL_EXTS = {".zip", ".rar", ".7z", ".skp"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+UNSORTED = "Imported"
+
+
+def _safe_name(name: str, limit: int = 80) -> str:
+    return re.sub(r'[<>:"/\\|?*]', "_", name).strip(" .")[:limit].rstrip(" .") or UNSORTED
+
+
+def _is_within(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 class LibraryManager:
     def __init__(self, base_dir: Optional[Path] = None):
-        self.base_dir = Path(base_dir or FEEDS_DIR)
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._base_dir_override = Path(base_dir) if base_dir else None
+
+    @property
+    def base_dir(self) -> Path:
+        """Follows config.FEEDS_DIR so a storage-location change applies immediately."""
+        d = self._base_dir_override or Path(config.FEEDS_DIR)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def get_meta(self, article_dir: Path) -> Dict[str, Any]:
         meta_file = article_dir / "meta.json"
@@ -80,107 +104,90 @@ class LibraryManager:
 
         return None
 
+    def _scan_article(self, article_dir: Path, cat_name: str, sub_name: str) -> Dict[str, Any]:
+        """Builds a library item for one article folder."""
+        base = self.base_dir
+        model_dir = article_dir / "model"
+        model_file = None
+        model_size = 0
+        if model_dir.is_dir():
+            model_files = sorted(f for f in model_dir.iterdir() if f.is_file() and not f.name.startswith("."))
+            if model_files:
+                model_file = model_files[0]
+                model_size = model_file.stat().st_size
+
+        raw_imgs = [i for i in article_dir.iterdir() if i.is_file() and i.suffix.lower() in IMAGE_EXTS]
+
+        def _sort_key(p: Path):
+            m = re.search(r"(\d+)", p.stem)
+            return int(m.group(1)) if m else 9999
+
+        raw_imgs.sort(key=_sort_key)
+        meta = self.get_meta(article_dir)
+        rel_article = str(article_dir.relative_to(base))
+        return {
+            "id": rel_article,
+            "category": cat_name,
+            "subcategory": sub_name,
+            "title": article_dir.name.replace("_", " "),
+            "folder_path": rel_article,
+            "has_model": model_file is not None,
+            "model_filename": model_file.name if model_file else None,
+            "model_path": str(model_file.relative_to(base)) if model_file else None,
+            "model_size": format_bytes(model_size),
+            "model_size_bytes": model_size,
+            "images": [str(i.relative_to(base)) for i in raw_imgs],
+            "images_count": len(raw_imgs),
+            "article_url": meta.get("article_url"),
+            "imported": bool(meta.get("imported")),
+            "modified_at": int(article_dir.stat().st_mtime),
+            "_image_bytes": sum(i.stat().st_size for i in raw_imgs),
+        }
+
     def scan_library(self, search: Optional[str] = None, category_filter: Optional[str] = None) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = []
-        total_models = 0
-        total_images = 0
-        total_size_bytes = 0
-        categories_set = set()
-        subcategories_set = set()
+        base = self.base_dir
+        found: List[Dict[str, Any]] = []
 
-        if not self.base_dir.exists():
-            return {
-                "items": [],
-                "stats": {
-                    "total_models": 0,
-                    "total_images": 0,
-                    "total_size": "0 B",
-                    "total_size_bytes": 0,
-                    "categories_count": 0,
-                    "subcategories_count": 0,
-                },
-                "categories": [],
-            }
+        def _visible_dirs(d: Path):
+            return [x for x in sorted(d.iterdir()) if x.is_dir() and not x.name.startswith(".")]
 
-        # Categories are top-level subfolders in FEEDS_DIR
-        for cat_dir in sorted(self.base_dir.iterdir()):
-            if not cat_dir.is_dir() or cat_dir.name.startswith("."):
-                continue
-
-            cat_name = cat_dir.name
-            categories_set.add(cat_name)
-
-            for sub_dir in sorted(cat_dir.iterdir()):
-                if not sub_dir.is_dir() or sub_dir.name.startswith("."):
+        # Layout: <category>/<subcategory>/<article>/{model/, images}.
+        # Older direct downloads were saved as <category>/<article>/{model/, images}
+        # (no subcategory level); those are shown too.
+        for cat_dir in _visible_dirs(base):
+            for sub_dir in _visible_dirs(cat_dir):
+                if (sub_dir / "model").is_dir() and not any(
+                    (d / "model").is_dir() for d in _visible_dirs(sub_dir) if d.name != "model"
+                ):
+                    found.append(self._scan_article(sub_dir, cat_dir.name, "Direct"))
                     continue
-
-                sub_name = sub_dir.name
-                subcategories_set.add(sub_name)
-
-                # Direct downloads or articles
-                for article_dir in sorted(sub_dir.iterdir()):
-                    if not article_dir.is_dir() or article_dir.name.startswith("."):
+                for article_dir in _visible_dirs(sub_dir):
+                    if article_dir.name == "model":
                         continue
+                    found.append(self._scan_article(article_dir, cat_dir.name, sub_dir.name))
 
-                    article_title = article_dir.name
-                    model_dir = article_dir / "model"
+        total_models = sum(1 for i in found if i["has_model"])
+        total_images = sum(i["images_count"] for i in found)
+        total_size_bytes = sum(i["model_size_bytes"] + i["_image_bytes"] for i in found)
+        categories_set = {i["category"] for i in found}
+        subcategories_set = {i["subcategory"] for i in found}
 
-                    model_file = None
-                    model_size = 0
-                    if model_dir.exists() and model_dir.is_dir():
-                        model_files = [f for f in model_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
-                        if model_files:
-                            model_file = model_files[0]
-                            model_size = model_file.stat().st_size
-                            total_models += 1
-                            total_size_bytes += model_size
-
-                    # Find preview images (sorted naturally: image_1, image_2, image_10)
-                    images = []
-                    raw_imgs = [img for img in article_dir.iterdir() if img.is_file() and img.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
-                    
-                    def _sort_key(p: Path):
-                        m = re.search(r"(\d+)", p.stem)
-                        return int(m.group(1)) if m else 9999
-
-                    raw_imgs.sort(key=_sort_key)
-                    for img in raw_imgs:
-                        images.append(str(img.relative_to(self.base_dir)))
-                        total_images += 1
-                        total_size_bytes += img.stat().st_size
-
-                    # Filters
-                    if category_filter and category_filter != "all" and cat_name != category_filter:
-                        continue
-
-                    if search:
-                        s_lower = search.lower()
-                        match_title = s_lower in article_title.lower()
-                        match_cat = s_lower in cat_name.lower() or s_lower in sub_name.lower()
-                        match_file = model_file and s_lower in model_file.name.lower()
-                        if not (match_title or match_cat or match_file):
-                            continue
-
-                    rel_article = str(article_dir.relative_to(self.base_dir))
-                    rel_model = str(model_file.relative_to(self.base_dir)) if model_file else None
-                    meta = self.get_meta(article_dir)
-
-                    items.append({
-                        "id": rel_article,
-                        "category": cat_name,
-                        "subcategory": sub_name,
-                        "title": article_title.replace("_", " "),
-                        "folder_path": rel_article,
-                        "has_model": model_file is not None,
-                        "model_filename": model_file.name if model_file else None,
-                        "model_path": rel_model,
-                        "model_size": format_bytes(model_size),
-                        "model_size_bytes": model_size,
-                        "images": images,
-                        "images_count": len(images),
-                        "article_url": meta.get("article_url"),
-                        "modified_at": int(article_dir.stat().st_mtime),
-                    })
+        items = []
+        for item in found:
+            if category_filter and category_filter != "all" and item["category"] != category_filter:
+                continue
+            if search:
+                s_lower = search.lower()
+                if not (
+                    s_lower in item["title"].lower()
+                    or s_lower in item["category"].lower()
+                    or s_lower in item["subcategory"].lower()
+                    or (item["model_filename"] and s_lower in item["model_filename"].lower())
+                ):
+                    continue
+            items.append(item)
+        for item in found:
+            item.pop("_image_bytes", None)
 
         # Sort items newest first
         items.sort(key=lambda x: x["modified_at"], reverse=True)
@@ -195,13 +202,142 @@ class LibraryManager:
                 "categories_count": len(categories_set),
                 "subcategories_count": len(subcategories_set),
             },
-            "categories": sorted(list(categories_set)),
+            "categories": sorted(categories_set),
         }
+
+    # --- Importing existing downloads ---
+
+    def _discover_articles(self, root: Path, log_cb=None) -> List[Dict[str, Any]]:
+        """
+        Finds importable articles under `root`. Understood layouts:
+          * <article>/model/<archive> + images        (this app's own layout)
+          * <folder>/<one archive> + images            (one article per folder)
+          * <folder>/<many archives>                   (each archive is an article;
+                                                        images sharing its name go along)
+        Category / sub-category come from the two folders above the article when
+        they exist, otherwise "Imported".
+        """
+        found: List[Dict[str, Any]] = []
+        chain_root = [root.name] if root.name else []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            d = Path(dirpath)
+            if d.name == "model" and d != root:
+                continue  # handled by the parent article
+            files = [d / f for f in sorted(filenames) if not f.startswith(".")]
+            models_here = [f for f in files if f.suffix.lower() in MODEL_EXTS]
+            images_here = [f for f in files if f.suffix.lower() in IMAGE_EXTS]
+            chain = chain_root + list(d.relative_to(root).parts)
+
+            model_sub = d / "model"
+            sub_models = (
+                [f for f in sorted(model_sub.iterdir()) if f.is_file() and f.suffix.lower() in MODEL_EXTS]
+                if model_sub.is_dir() else []
+            )
+
+            if sub_models or len(models_here) == 1:
+                found.append({"name": d.name, "parents": chain[:-1], "models": sub_models or models_here, "images": images_here})
+            elif len(models_here) > 1:
+                for m in models_here:
+                    imgs = [i for i in images_here if i.stem.startswith(m.stem)]
+                    found.append({"name": m.stem, "parents": chain, "models": [m], "images": imgs})
+        return found
+
+    def _import_article(self, art: Dict[str, Any], move: bool) -> str:
+        """Copies/moves one discovered article into the library. Returns 'imported' or 'skipped'."""
+        parents = art["parents"]
+        category = _safe_name(parents[-2]) if len(parents) >= 2 else UNSORTED
+        sub = _safe_name(parents[-1]) if len(parents) >= 1 else UNSORTED
+        dest = self.base_dir / category / sub / _safe_name(art["name"])
+        model_dir = dest / "model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        transfer = shutil.move if move else shutil.copy2
+        changed = False
+
+        for m in art["models"]:
+            target = model_dir / m.name
+            if target.exists() and target.stat().st_size == m.stat().st_size:
+                continue
+            transfer(str(m), str(target))
+            changed = True
+
+        existing_imgs = [i for i in dest.iterdir() if i.is_file() and i.suffix.lower() in IMAGE_EXTS]
+        existing_sizes = {i.stat().st_size for i in existing_imgs}
+        n = len(existing_imgs)
+        for img in art["images"]:
+            if img.stat().st_size in existing_sizes:
+                continue  # same picture already imported
+            n += 1
+            while (dest / f"image_{n}{img.suffix.lower()}").exists():
+                n += 1
+            transfer(str(img), str(dest / f"image_{n}{img.suffix.lower()}"))
+            changed = True
+
+        if changed:
+            meta = self.get_meta(dest)
+            meta.setdefault("imported", True)
+            meta.setdefault("title", art["name"])
+            self.save_meta(dest, meta)
+        return "imported" if changed else "skipped"
+
+    def import_paths(
+        self,
+        paths: List[str],
+        move: bool = False,
+        log_cb: Optional[Any] = None,
+        progress_cb: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Imports already-downloaded model archives/images (files or folders) into the library."""
+        base = self.base_dir
+        arts: List[Dict[str, Any]] = []
+        loose: Dict[Path, List[Path]] = {}
+        notes: List[str] = []
+
+        for raw in paths:
+            p = Path(raw).expanduser()
+            if not p.exists():
+                notes.append(f"Not found: {p}")
+                continue
+            if p.is_dir():
+                if _is_within(p, base):
+                    notes.append(f"Already in the library folder: {p}")
+                    continue
+                arts.extend(self._discover_articles(p, log_cb))
+            elif p.suffix.lower() in MODEL_EXTS | IMAGE_EXTS:
+                loose.setdefault(p.parent, []).append(p)
+
+        for parent, files in loose.items():
+            if _is_within(parent, base):
+                notes.append(f"Already in the library folder: {parent}")
+                continue
+            images = [f for f in files if f.suffix.lower() in IMAGE_EXTS]
+            for m in (f for f in files if f.suffix.lower() in MODEL_EXTS):
+                arts.append({
+                    "name": m.stem, "parents": [], "models": [m],
+                    "images": [i for i in images if i.stem.startswith(m.stem)],
+                })
+
+        stats = {"found": len(arts), "imported": 0, "skipped": 0, "failed": 0, "notes": notes}
+        for idx, art in enumerate(arts, 1):
+            try:
+                outcome = self._import_article(art, move)
+                stats[outcome] += 1
+                if log_cb:
+                    log_cb(f"{outcome.capitalize()}: {art['name'][:70]}")
+            except Exception as e:
+                stats["failed"] += 1
+                logger.warning("Import failed for %s: %s", art["name"], e)
+                if log_cb:
+                    log_cb(f"Failed: {art['name'][:60]} ({e})")
+            if progress_cb:
+                progress_cb(idx, len(arts))
+        return stats
 
     def delete_item(self, rel_folder_path: str) -> bool:
         """Safely removes an article folder within FEEDS_DIR."""
         target = (self.base_dir / rel_folder_path).resolve()
-        if not str(target).startswith(str(self.base_dir.resolve())):
+        if not _is_within(target, self.base_dir):
             raise ValueError("Invalid target path outside feeds directory")
 
         if target.exists() and target.is_dir():
@@ -212,7 +348,7 @@ class LibraryManager:
     def create_images_zip(self, rel_folder_path: str) -> Path:
         """Packages all images of an article into a temporary zip file."""
         target = (self.base_dir / rel_folder_path).resolve()
-        if not str(target).startswith(str(self.base_dir.resolve())):
+        if not _is_within(target, self.base_dir):
             raise ValueError("Invalid target path")
 
         temp_dir = Path(tempfile.gettempdir()) / "cgtips_exports"
@@ -230,7 +366,7 @@ class LibraryManager:
     def create_bundle_zip(self, rel_folder_path: str) -> Path:
         """Packages both the model archive and all images of an article into a zip."""
         target = (self.base_dir / rel_folder_path).resolve()
-        if not str(target).startswith(str(self.base_dir.resolve())):
+        if not _is_within(target, self.base_dir):
             raise ValueError("Invalid target path")
 
         temp_dir = Path(tempfile.gettempdir()) / "cgtips_exports"
@@ -258,7 +394,7 @@ class LibraryManager:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for rel_path in rel_folder_paths:
                 target = (self.base_dir / rel_path).resolve()
-                if not str(target).startswith(str(self.base_dir.resolve())) or not target.exists():
+                if not _is_within(target, self.base_dir) or not target.exists():
                     continue
 
                 folder_prefix = target.name

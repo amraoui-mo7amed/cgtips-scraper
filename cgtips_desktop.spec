@@ -31,6 +31,7 @@ hiddenimports = [
     'desktop.backend.image_provider',
     'desktop.backend.library',
     'engine',
+    'cache_io',
     'scraper',
     'utils',
     'config',

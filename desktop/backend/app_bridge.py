@@ -6,6 +6,7 @@ No external REST API server required.
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -19,8 +20,10 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtWidgets import QFileDialog
 
-from .scraper_service import scraper_service, FEEDS_DIR
+import config
+from .scraper_service import scraper_service
 
 
 class Worker(QRunnable):
@@ -74,11 +77,19 @@ class AppBridge(QObject):
     isResolvingChanged = Signal()
     resolverLogsChanged = Signal()
 
+    feedsDirChanged = Signal()
+    bulkStateChanged = Signal()
+    maintenanceChanged = Signal()
+    libraryImported = Signal()
+
     # User notification & progress signals
     toast = Signal(str, str)  # (type: 'info'|'success'|'warning'|'error', message)
     searchCompleted = Signal(bool, str)
     resolveCompleted = Signal(bool, str)
     resolverLogAdded = Signal(str)
+
+    # Internal: lets worker threads run a callable on the GUI thread
+    _runOnMain = Signal(object)
 
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -106,15 +117,49 @@ class AppBridge(QObject):
         self._is_resolving = False
         self._resolver_logs: List[str] = []
 
+        self._bulk_state: Dict[str, Any] = {}
+        self._maintenance_busy = False
+        self._maintenance_message = ""
+
+        self._runOnMain.connect(self._execute_on_main)
+
+    @Slot(object)
+    def _execute_on_main(self, fn):
+        fn()
+
+    def _start(self, task: Callable, ok: Optional[Callable] = None, err: Optional[Callable] = None):
+        """Runs task in the thread pool; ok/err callbacks run on the GUI thread."""
+        self.thread_pool.start(Worker(
+            task,
+            on_success=(lambda r: self._runOnMain.emit(lambda: ok(r))) if ok else None,
+            on_error=(lambda e: self._runOnMain.emit(lambda: err(e))) if err else None,
+        ))
+
     # --- Properties ---
 
     @Property(bool, notify=isConnectedChanged)
     def isConnected(self) -> bool:
         return self._is_connected
 
-    @Property(str, constant=True)
+    @Property(str, notify=feedsDirChanged)
     def feedsDir(self) -> str:
-        return str(FEEDS_DIR)
+        return str(config.FEEDS_DIR)
+
+    @Property("QVariant", notify=bulkStateChanged)
+    def bulkState(self) -> Dict[str, Any]:
+        return self._bulk_state
+
+    @Property(bool, notify=bulkStateChanged)
+    def isBulkRunning(self) -> bool:
+        return bool(self._bulk_state.get("running"))
+
+    @Property(bool, notify=maintenanceChanged)
+    def maintenanceBusy(self) -> bool:
+        return self._maintenance_busy
+
+    @Property(str, notify=maintenanceChanged)
+    def maintenanceMessage(self) -> str:
+        return self._maintenance_message
 
     @Property("QVariant", notify=statusDataChanged)
     def statusData(self) -> Dict[str, Any]:
@@ -402,7 +447,7 @@ class AppBridge(QObject):
     @Slot(str)
     def openFolder(self, folder_path: str):
         """Opens folder in macOS Finder / system file manager."""
-        target = (FEEDS_DIR / folder_path).resolve() if folder_path else FEEDS_DIR.resolve()
+        target = (config.FEEDS_DIR / folder_path).resolve() if folder_path else config.FEEDS_DIR.resolve()
         if not target.exists():
             target.mkdir(parents=True, exist_ok=True)
 
@@ -438,3 +483,178 @@ class AppBridge(QObject):
             clipboard.setText(clean_text)
             self.toast.emit("success", "Link copied to clipboard!")
 
+    # --- Bulk download ---
+
+    def _launch_bulk(self, groups: List[Dict[str, Any]], max_items: int, download_model: bool, download_images: bool):
+        if self.service.is_bulk_running():
+            self.toast.emit("warning", "A bulk download is already running")
+            return
+        if not groups:
+            self.toast.emit("warning", "Nothing selected to download")
+            return
+        if not (download_model or download_images):
+            self.toast.emit("warning", "Enable at least Models or Images")
+            return
+
+        self._bulk_state = {"running": True, "phase": "listing", "total": 0, "done": 0, "succeeded": 0,
+                            "skipped": 0, "failed": 0, "current": "Starting...", "cancelled": False, "failures": []}
+        self.bulkStateChanged.emit()
+
+        def _on_state(state: Dict[str, Any]):
+            self._runOnMain.emit(lambda: self._apply_bulk_state(state))
+
+        def _task():
+            return self.service.bulk_download(
+                groups, download_model=download_model, download_images=download_images,
+                max_items=max_items, state_cb=_on_state,
+            )
+
+        def _on_success(state):
+            self._apply_bulk_state(state)
+            msg = (f"Bulk download {'cancelled' if state.get('cancelled') else 'finished'}: "
+                   f"{state.get('succeeded', 0)} downloaded, {state.get('skipped', 0)} skipped, "
+                   f"{state.get('failed', 0)} failed")
+            self.toast.emit("warning" if state.get("failed") or state.get("cancelled") else "success", msg)
+            self.loadLibrary()
+            self.refreshStatus()
+
+        def _on_error(exc):
+            self._bulk_state = dict(self._bulk_state, running=False, phase="finished", current="")
+            self.bulkStateChanged.emit()
+            self.toast.emit("error", f"Bulk download failed: {exc}")
+
+        self._start(_task, _on_success, _on_error)
+
+    def _apply_bulk_state(self, state: Dict[str, Any]):
+        self._bulk_state = state
+        self.bulkStateChanged.emit()
+
+    @Slot("QVariantList", int, bool, bool)
+    def startBulkSubcategories(self, subcategories, max_items: int = 0, download_model: bool = True, download_images: bool = True):
+        """subcategories: [{category, subcategory, feed_url}, ...]. max_items 0 = whole feed."""
+        groups = [
+            {"category": g.get("category", ""), "subcategory": g.get("subcategory", ""), "feed_url": g.get("feed_url", "")}
+            for g in subcategories if g.get("feed_url")
+        ]
+        self._launch_bulk(groups, max_items, download_model, download_images)
+
+    @Slot(str, str, "QVariantList", bool, bool)
+    def startBulkArticles(self, category: str, subcategory: str, articles, download_model: bool = True, download_images: bool = True):
+        """articles: [{title, link}, ...] picked from one feed."""
+        items = [{"title": a.get("title", ""), "link": a.get("link", "")} for a in articles if a.get("link")]
+        self._launch_bulk([{"category": category, "subcategory": subcategory, "articles": items}], 0, download_model, download_images)
+
+    @Slot()
+    def cancelBulk(self):
+        if self.service.is_bulk_running():
+            self.service.cancel_bulk()
+            self._bulk_state = dict(self._bulk_state, current="Cancelling after the current article...")
+            self.bulkStateChanged.emit()
+
+    @Slot()
+    def dismissBulk(self):
+        if not self._bulk_state.get("running"):
+            self._bulk_state = {}
+            self.bulkStateChanged.emit()
+
+    # --- Storage location / cache / library import (file dialogs run on the GUI thread) ---
+
+    def _set_busy(self, busy: bool, message: str = ""):
+        self._maintenance_busy = busy
+        self._maintenance_message = message
+        self.maintenanceChanged.emit()
+
+    def _run_maintenance(self, message: str, task: Callable, on_done: Callable[[Any], str]):
+        if self._maintenance_busy:
+            self.toast.emit("warning", "Another operation is still running")
+            return
+        self._set_busy(True, message)
+
+        def _ok(res):
+            self._set_busy(False)
+            self.toast.emit("success", on_done(res))
+
+        def _err(exc):
+            self._set_busy(False)
+            self.toast.emit("error", str(exc))
+
+        self._start(task, _ok, _err)
+
+    @Slot(bool)
+    def chooseStorageDir(self, move_existing: bool = False):
+        """Lets the user pick a new download/library directory."""
+        start = str(config.FEEDS_DIR)
+        chosen = QFileDialog.getExistingDirectory(None, "Choose storage directory", start)
+        if not chosen:
+            return
+
+        def _task():
+            return self.service.set_storage_dir(chosen, move_existing=move_existing)
+
+        def _done(res):
+            self.feedsDirChanged.emit()
+            self.loadLibrary()
+            self.refreshStatus()
+            extra = f" ({res['moved']} items moved" + (f", {res['conflicts']} conflicts left in place" if res["conflicts"] else "") + ")" if move_existing else ""
+            return f"Storage location set to {res['feeds_dir']}{extra}"
+
+        self._run_maintenance("Changing storage location...", _task, _done)
+
+    @Slot(bool)
+    def exportCache(self, include_images: bool = True):
+        name = f"cgtips-cache-{time.strftime('%Y%m%d')}.zip"
+        path, _ = QFileDialog.getSaveFileName(None, "Export cache", str(Path.home() / name), "Cache archive (*.zip)")
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+
+        self._run_maintenance(
+            "Exporting cache...",
+            lambda: self.service.export_cache(path, include_images=include_images),
+            lambda r: f"Cache exported: {len(r['json_files'])} data files, {r['images']} thumbnails",
+        )
+
+    @Slot()
+    def importCache(self):
+        path, _ = QFileDialog.getOpenFileName(None, "Import cache", str(Path.home()), "Cache archive (*.zip)")
+        if not path:
+            return
+
+        def _done(r):
+            self.loadCategories()
+            self.refreshStatus()
+            return f"Cache imported: {len(r['json_files'])} data files, {r['images_added']} new thumbnails"
+
+        self._run_maintenance("Importing cache...", lambda: self.service.import_cache(path), _done)
+
+    def _import_library(self, paths: List[str], move: bool):
+        def _done(r):
+            self.loadLibrary()
+            self.refreshStatus()
+            self.libraryImported.emit()
+            msg = f"Imported {r['imported']} of {r['found']} items ({r['skipped']} already present"
+            msg += f", {r['failed']} failed)" if r["failed"] else ")"
+            if r["found"] == 0 and r["notes"]:
+                msg = r["notes"][0]
+            return msg
+
+        self._run_maintenance("Importing downloads into the library...",
+                              lambda: self.service.import_library(paths, move=move), _done)
+
+    @Slot(bool)
+    def importLibraryFolder(self, move: bool = False):
+        """Imports a folder of previously downloaded models (any depth)."""
+        chosen = QFileDialog.getExistingDirectory(None, "Choose a folder with downloaded models", str(Path.home()))
+        if chosen:
+            self._import_library([chosen], move)
+
+    @Slot(bool)
+    def importLibraryFiles(self, move: bool = False):
+        """Imports individually selected model archives / images."""
+        files, _ = QFileDialog.getOpenFileNames(
+            None, "Choose model archives / images", str(Path.home()),
+            "Models & images (*.zip *.rar *.7z *.skp *.jpg *.jpeg *.png *.webp)",
+        )
+        if files:
+            self._import_library(files, move)

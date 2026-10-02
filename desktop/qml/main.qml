@@ -84,7 +84,7 @@ ApplicationWindow {
                         case 1: return "Browse category hierarchy and live RSS article feeds";
                         case 2: return "Bypass download lockers and fetch 3D model archives";
                         case 3: return "Manage and download locally saved 3D models";
-                        case 4: return "Configure backend server address, API key, and view statistics";
+                        case 4: return "Storage location, cache backup and local statistics";
                         default: return "";
                     }
                 }
@@ -137,6 +137,12 @@ ApplicationWindow {
                 SettingsView {
                     id: settingsView
                 }
+            }
+
+            // Bulk download progress (shown on every tab while a job exists)
+            BulkProgressBar {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
             }
         }
     }

@@ -9,6 +9,8 @@ import logging
 import os
 import shutil
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 import requests
@@ -20,9 +22,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import config
+import cache_io
 from config import (
     BASE_DIR,
-    FEEDS_DIR,
     CATEGORIES_FILE,
     SELECTED_FEEDS_FILE,
     CREDENTIALS_FILE,
@@ -30,7 +33,7 @@ from config import (
     USER_AGENT,
     HEADLESS,
 )
-from engine import load_categories, resolve_and_download_single_article
+from engine import bulk_download, load_categories, resolve_and_download_single_article
 from utils import get_feed
 from .library import library_manager, format_bytes
 from gdrive_api import check_gdrive_status
@@ -43,6 +46,8 @@ class ScraperService:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+        self._bulk_cancel = threading.Event()
+        self._bulk_lock = threading.Lock()
 
     def search(self, query: str, page: int = 1) -> List[Dict[str, Any]]:
         """Directly searches CGTips for SketchUp 3D models."""
@@ -175,7 +180,7 @@ class ScraperService:
         progress_cb: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
         """Resolves content lockers and downloads model + images directly."""
-        dest_folder = FEEDS_DIR / "Direct_Downloads"
+        dest_folder = config.FEEDS_DIR / "Direct_Downloads" / "Direct"
         dest_folder.mkdir(parents=True, exist_ok=True)
 
         res = resolve_and_download_single_article(
@@ -209,7 +214,7 @@ class ScraperService:
             raw_imgs = item.get("images", [])
             imgs_file_urls = []
             for rel_img in raw_imgs:
-                p = (FEEDS_DIR / rel_img).resolve()
+                p = (config.FEEDS_DIR / rel_img).resolve()
                 if p.exists():
                     imgs_file_urls.append(QUrl.fromLocalFile(str(p)).toString())
 
@@ -217,11 +222,11 @@ class ScraperService:
             item["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
 
             # Local folder and model path
-            full_folder = (FEEDS_DIR / item["folder_path"]).resolve()
+            full_folder = (config.FEEDS_DIR / item["folder_path"]).resolve()
             item["folder_full_path"] = str(full_folder)
 
             if item.get("model_path"):
-                full_model = (FEEDS_DIR / item["model_path"]).resolve()
+                full_model = (config.FEEDS_DIR / item["model_path"]).resolve()
                 item["model_file_full"] = str(full_model)
             else:
                 item["model_file_full"] = ""
@@ -239,7 +244,7 @@ class ScraperService:
 
     def retry_model(self, folder_path: str, log_cb: Optional[Callable[[str], None]] = None) -> bool:
         """Finds article URL and re-runs model extraction directly."""
-        article_dir = (FEEDS_DIR / folder_path).resolve()
+        article_dir = (config.FEEDS_DIR / folder_path).resolve()
         if not article_dir.exists():
             if log_cb:
                 log_cb(f"Folder not found: {folder_path}")
@@ -251,7 +256,7 @@ class ScraperService:
         if not article_url:
             if log_cb:
                 log_cb("Looking up article URL on CGTips...")
-            article_url = library_manager.find_article_url_on_site(article_dir)
+            article_url = library_manager.find_article_url(article_dir.name, article_dir)
 
         if not article_url:
             if log_cb:
@@ -270,6 +275,86 @@ class ScraperService:
         )
         return bool(result.get("success") and result.get("model_file"))
 
+    # --- Bulk download ---
+
+    def is_bulk_running(self) -> bool:
+        return self._bulk_lock.locked()
+
+    def cancel_bulk(self) -> None:
+        self._bulk_cancel.set()
+
+    def bulk_download(
+        self,
+        groups: List[Dict[str, Any]],
+        download_model: bool = True,
+        download_images: bool = True,
+        max_items: int = 0,
+        state_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        log_cb: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, Any]:
+        """Bulk-downloads articles / whole sub-categories (see engine.bulk_download)."""
+        if not self._bulk_lock.acquire(blocking=False):
+            raise RuntimeError("A bulk download is already running")
+        try:
+            self._bulk_cancel.clear()
+            return bulk_download(
+                groups,
+                download_model=download_model,
+                download_imgs=download_images,
+                max_items=max_items,
+                state_cb=state_cb,
+                log_cb=log_cb,
+                cancel_event=self._bulk_cancel,
+            )
+        finally:
+            self._bulk_lock.release()
+
+    # --- Storage location ---
+
+    def set_storage_dir(self, new_dir: str, move_existing: bool = False) -> Dict[str, Any]:
+        """Switches the library location, optionally moving existing downloads along."""
+        old = Path(config.FEEDS_DIR).resolve()
+        new = Path(new_dir).expanduser().resolve()
+        if new == old:
+            return {"feeds_dir": str(old), "moved": 0, "conflicts": 0}
+        if move_existing and (new.is_relative_to(old) or old.is_relative_to(new)):
+            raise ValueError("The new location cannot be inside the current one (or contain it)")
+
+        config.set_feeds_dir(new)  # validates writability and persists
+        moved = conflicts = 0
+        if move_existing and old.exists():
+            def _merge(src: Path, dst: Path):
+                nonlocal moved, conflicts
+                if not dst.exists():
+                    shutil.move(str(src), str(dst))
+                    moved += 1
+                elif src.is_dir() and dst.is_dir():
+                    for child in list(src.iterdir()):
+                        _merge(child, dst / child.name)
+                    try:
+                        src.rmdir()
+                    except OSError:
+                        pass
+                else:
+                    conflicts += 1  # file already exists at destination; keep both sides untouched
+
+            for child in list(old.iterdir()):
+                _merge(child, new / child.name)
+        return {"feeds_dir": str(new), "moved": moved, "conflicts": conflicts}
+
+    # --- Cache import / export ---
+
+    def export_cache(self, dest_zip: str, include_images: bool = True, progress_cb=None) -> Dict[str, Any]:
+        return cache_io.export_cache(dest_zip, include_images=include_images, progress_cb=progress_cb)
+
+    def import_cache(self, src_zip: str, progress_cb=None) -> Dict[str, Any]:
+        return cache_io.import_cache(src_zip, progress_cb=progress_cb)
+
+    # --- Library import ---
+
+    def import_library(self, paths: List[str], move: bool = False, log_cb=None, progress_cb=None) -> Dict[str, Any]:
+        return library_manager.import_paths(paths, move=move, log_cb=log_cb, progress_cb=progress_cb)
+
     def get_system_status(self) -> Dict[str, Any]:
         """Returns direct scraper status and disk metrics."""
         lib = library_manager.scan_library()
@@ -277,7 +362,8 @@ class ScraperService:
 
         return {
             "mode": "Direct Scraper Engine (In-Process)",
-            "feeds_dir": str(FEEDS_DIR),
+            "feeds_dir": str(config.FEEDS_DIR),
+            "free_space": format_bytes(shutil.disk_usage(config.FEEDS_DIR).free),
             "library_summary": lib.get("stats", {}),
             "gdrive": gdrive,
             "categories_cached": Path(CATEGORIES_FILE).exists(),
