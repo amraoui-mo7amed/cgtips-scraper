@@ -12,6 +12,8 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-latest
+    # The macOS build is still being fixed; don't let it block the Windows release.
+    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -119,6 +121,7 @@ jobs:
 
   publish-release:
     needs: [build-macos, build-windows]
+    if: ${{ !cancelled() && needs.build-windows.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -142,6 +145,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
           files: |
             release-assets/CGTips-3D-macOS.dmg
             release-assets/CGTips-3D-macOS.zip

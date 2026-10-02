@@ -14,6 +14,7 @@ from PySide6.QtCore import (
     Property,
     QObject,
     QRunnable,
+    QThread,
     QThreadPool,
     QUrl,
     Signal,
@@ -23,6 +24,31 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFileDialog
 
 import config
+from .library import format_bytes as _fmt_bytes
+
+
+def _title_key(title: str) -> str:
+    return "t:" + "".join(ch for ch in (title or "").lower() if ch.isalnum())[:60]
+
+
+def _build_downloaded_index(library_items: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Maps article URLs and title keys of library items that have their model to their folder."""
+    index: Dict[str, str] = {}
+    for it in library_items:
+        if not it.get("has_model"):
+            continue
+        if it.get("article_url"):
+            index[it["article_url"].rstrip("/")] = it["folder_path"]
+        index[_title_key(it.get("title", ""))] = it["folder_path"]
+    return index
+
+
+def _mark_downloaded(feed_items: List[Dict[str, Any]], index: Dict[str, str]) -> List[Dict[str, Any]]:
+    out = []
+    for e in feed_items:
+        folder = index.get((e.get("link") or "").rstrip("/")) or index.get(_title_key(e.get("title", "")))
+        out.append(dict(e, downloaded=bool(folder), local_folder=folder or ""))
+    return out
 from .scraper_service import scraper_service
 
 
@@ -81,6 +107,7 @@ class AppBridge(QObject):
     bulkStateChanged = Signal()
     maintenanceChanged = Signal()
     libraryImported = Signal()
+    downloadJobsChanged = Signal()
 
     # User notification & progress signals
     toast = Signal(str, str)  # (type: 'info'|'success'|'warning'|'error', message)
@@ -110,6 +137,7 @@ class AppBridge(QObject):
         self._feed_loading = False
 
         self._library_items: List[Dict[str, Any]] = []
+        self._downloaded_index: Dict[str, str] = {}  # article url / title key -> library folder
         self._library_loading = False
         self._library_total = 0
 
@@ -120,6 +148,11 @@ class AppBridge(QObject):
         self._bulk_state: Dict[str, Any] = {}
         self._maintenance_busy = False
         self._maintenance_message = ""
+
+        # Download / import jobs shown in the header's status widget (newest first)
+        self._jobs: List[Dict[str, Any]] = []
+        self._job_seq = 0
+        self._bulk_job_id = 0
 
         self._runOnMain.connect(self._execute_on_main)
 
@@ -152,6 +185,43 @@ class AppBridge(QObject):
     @Property(bool, notify=bulkStateChanged)
     def isBulkRunning(self) -> bool:
         return bool(self._bulk_state.get("running"))
+
+    @Property("QVariant", notify=downloadJobsChanged)
+    def downloadJobs(self) -> List[Dict[str, Any]]:
+        return self._jobs
+
+    @Property(int, notify=downloadJobsChanged)
+    def activeJobCount(self) -> int:
+        return sum(1 for j in self._jobs if j["status"] == "running")
+
+    # --- Download jobs ---
+
+    def _job_add(self, kind: str, title: str, detail: str = "") -> int:
+        """Registers a job (GUI thread). progress -1 means indeterminate."""
+        self._job_seq += 1
+        self._jobs.insert(0, {"id": self._job_seq, "kind": kind, "title": title, "detail": detail,
+                              "status": "running", "progress": -1.0, "started": time.strftime("%H:%M")})
+        del self._jobs[30:]
+        self.downloadJobsChanged.emit()
+        return self._job_seq
+
+    def _job_update(self, job_id: int, **fields):
+        """Updates a job; safe to call from worker threads."""
+        def _apply():
+            for i, j in enumerate(self._jobs):
+                if j["id"] == job_id:
+                    self._jobs[i] = dict(j, **fields)
+                    self.downloadJobsChanged.emit()
+                    return
+        if QThread.currentThread() is self.thread():
+            _apply()
+        else:
+            self._runOnMain.emit(_apply)
+
+    @Slot()
+    def clearFinishedJobs(self):
+        self._jobs = [j for j in self._jobs if j["status"] == "running"]
+        self.downloadJobsChanged.emit()
 
     @Property(bool, notify=maintenanceChanged)
     def maintenanceBusy(self) -> bool:
@@ -304,7 +374,7 @@ class AppBridge(QObject):
             return self.service.get_feed_preview(feed_url, limit=15)
 
         def _on_success(items):
-            self._feed_items = items
+            self._feed_items = _mark_downloaded(items, self._downloaded_index)
             self._feed_loading = False
             self.feedItemsChanged.emit()
             self.feedLoadingChanged.emit()
@@ -331,10 +401,28 @@ class AppBridge(QObject):
         self.isResolvingChanged.emit()
         self.resolverLogsChanged.emit()
 
+        slug = clean_url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ")
+        job_id = self._job_add("resolve", slug[:90] or clean_url, "Starting...")
+        last_bytes = [0.0]
+
         def _log_cb(msg: str):
             self._resolver_logs.append(msg)
             self.resolverLogsChanged.emit()
             self.resolverLogAdded.emit(msg)
+            if msg.startswith("Article title: "):
+                self._job_update(job_id, title=msg[len("Article title: "):].strip("'"), detail=msg)
+            else:
+                self._job_update(job_id, detail=msg)
+
+        def _progress_cb(done: int, total: int, _name: str = ""):
+            if time.monotonic() - last_bytes[0] < 0.3 and done < total:
+                return
+            last_bytes[0] = time.monotonic()
+            self._job_update(
+                job_id,
+                progress=(done / total) if total else -1.0,
+                detail=f"Downloading model  {_fmt_bytes(done)}" + (f" / {_fmt_bytes(total)}" if total else ""),
+            )
 
         def _task():
             return self.service.resolve_article(
@@ -342,9 +430,15 @@ class AppBridge(QObject):
                 download_model=download_model,
                 download_images=download_images,
                 log_cb=_log_cb,
+                progress_cb=_progress_cb,
             )
 
         def _on_success(res):
+            ok = bool(res.get("success")) if isinstance(res, dict) else True
+            self._job_update(
+                job_id, status="done" if ok else "failed", progress=1.0 if ok else -1.0,
+                detail="Model and images saved" if ok else (res.get("error") or "No model downloaded"),
+            )
             self._resolver_result = res
             self._is_resolving = False
             self.resolverResultChanged.emit()
@@ -355,6 +449,7 @@ class AppBridge(QObject):
             self.refreshStatus()
 
         def _on_error(exc):
+            self._job_update(job_id, status="failed", detail=str(exc)[:160])
             self._is_resolving = False
             self.isResolvingChanged.emit()
             err_msg = str(exc)
@@ -374,6 +469,11 @@ class AppBridge(QObject):
 
         def _on_success(res):
             items = res.get("items", [])
+            if not search and (not category or category == "all"):
+                self._downloaded_index = _build_downloaded_index(items)
+                if self._feed_items:
+                    self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
+                    self.feedItemsChanged.emit()
             self._library_items = items
             self._library_total = res.get("total", len(items))
             self._library_loading = False
@@ -411,11 +511,14 @@ class AppBridge(QObject):
     def retryLibraryModel(self, folder_path: str):
         """Retries downloading missing model archive."""
         self.toast.emit("info", f"Retrying model download for {folder_path}...")
+        job_id = self._job_add("resolve", Path(folder_path).name[:90], "Downloading missing model...")
 
         def _task():
             return self.service.retry_model(folder_path)
 
         def _on_success(ok):
+            self._job_update(job_id, status="done" if ok else "failed", progress=1.0 if ok else -1.0,
+                             detail="Model downloaded" if ok else "Could not download the model (Drive link or quota)")
             if ok:
                 self.toast.emit("success", "Model file re-downloaded successfully!")
                 self.loadLibrary()
@@ -424,6 +527,7 @@ class AppBridge(QObject):
                 self.toast.emit("error", "Could not download model. Check GDrive link or quota.")
 
         def _on_error(exc):
+            self._job_update(job_id, status="failed", detail=str(exc)[:160])
             self.toast.emit("error", f"Retry error: {str(exc)}")
 
         self.thread_pool.start(Worker(_task, on_success=_on_success, on_error=_on_error))
@@ -499,6 +603,7 @@ class AppBridge(QObject):
         self._bulk_state = {"running": True, "phase": "listing", "total": 0, "done": 0, "succeeded": 0,
                             "skipped": 0, "failed": 0, "current": "Starting...", "cancelled": False, "failures": []}
         self.bulkStateChanged.emit()
+        self._bulk_job_id = self._job_add("bulk", "Bulk download", "Reading feeds...")
 
         def _on_state(state: Dict[str, Any]):
             self._runOnMain.emit(lambda: self._apply_bulk_state(state))
@@ -521,6 +626,7 @@ class AppBridge(QObject):
         def _on_error(exc):
             self._bulk_state = dict(self._bulk_state, running=False, phase="finished", current="")
             self.bulkStateChanged.emit()
+            self._job_update(self._bulk_job_id, status="failed", detail=str(exc)[:160])
             self.toast.emit("error", f"Bulk download failed: {exc}")
 
         self._start(_task, _on_success, _on_error)
@@ -528,6 +634,27 @@ class AppBridge(QObject):
     def _apply_bulk_state(self, state: Dict[str, Any]):
         self._bulk_state = state
         self.bulkStateChanged.emit()
+        if not self._bulk_job_id:
+            return
+        total, done = state.get("total", 0), state.get("done", 0)
+        if state.get("running"):
+            detail = state.get("current") or ""
+            if state.get("bytes_total"):
+                detail += f"  ({_fmt_bytes(state.get('bytes_done', 0))} / {_fmt_bytes(state['bytes_total'])})"
+            self._job_update(self._bulk_job_id, title=f"Bulk download  {done} / {total}" if total else "Bulk download",
+                             progress=(done / total) if total else -1.0, detail=detail)
+        else:
+            if state.get("cancelled"):
+                status = "cancelled"
+            elif state.get("failed") and not state.get("succeeded"):
+                status = "failed"
+            else:
+                status = "done"
+            self._job_update(
+                self._bulk_job_id, title=f"Bulk download  {done} / {total}", status=status,
+                progress=(done / total) if total else 1.0,
+                detail=f"{state.get('succeeded', 0)} downloaded, {state.get('skipped', 0)} skipped, {state.get('failed', 0)} failed",
+            )
 
     @Slot("QVariantList", int, bool, bool)
     def startBulkSubcategories(self, subcategories, max_items: int = 0, download_model: bool = True, download_images: bool = True):
@@ -629,18 +756,34 @@ class AppBridge(QObject):
         self._run_maintenance("Importing cache...", lambda: self.service.import_cache(path), _done)
 
     def _import_library(self, paths: List[str], move: bool):
+        if self._maintenance_busy:
+            self.toast.emit("warning", "Another operation is still running")
+            return
+        job_id = self._job_add("import", "Import into library", "Scanning folders...")
+
+        def _progress(idx: int, total: int):
+            self._job_update(job_id, progress=idx / total if total else -1.0, detail=f"{idx} / {total} items")
+
         def _done(r):
             self.loadLibrary()
             self.refreshStatus()
             self.libraryImported.emit()
             msg = f"Imported {r['imported']} of {r['found']} items ({r['skipped']} already present"
-            msg += f", {r['failed']} failed)" if r["failed"] else ")"
+            msg += f", {r['failed']} failed: {'; '.join(r['errors'][:2])})" if r["failed"] else ")"
             if r["found"] == 0 and r["notes"]:
                 msg = r["notes"][0]
+            failed_all = r["failed"] and not r["imported"]
+            self._job_update(job_id, status="failed" if failed_all else "done", progress=1.0, detail=msg)
             return msg
 
-        self._run_maintenance("Importing downloads into the library...",
-                              lambda: self.service.import_library(paths, move=move), _done)
+        def _task():
+            try:
+                return self.service.import_library(paths, move=move, progress_cb=_progress)
+            except Exception as e:
+                self._job_update(job_id, status="failed", detail=str(e)[:220])
+                raise
+
+        self._run_maintenance("Importing downloads into the library...", _task, _done)
 
     @Slot(bool)
     def importLibraryFolder(self, move: bool = False):

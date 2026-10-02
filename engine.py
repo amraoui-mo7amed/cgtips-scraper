@@ -324,7 +324,9 @@ def _article_complete(folder: Path, need_model: bool, need_images: bool) -> bool
         return False
     if need_model:
         model_dir = folder / "model"
-        if not (model_dir.is_dir() and any(f.is_file() and not f.name.startswith(".") for f in model_dir.iterdir())):
+        if not (model_dir.is_dir() and any(
+            f.is_file() and not f.name.startswith(".") and f.stat().st_size > 0 for f in model_dir.iterdir()
+        )):
             return False
     if need_images:
         if not any(f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp") for f in folder.iterdir() if f.is_file()):
@@ -437,12 +439,22 @@ def bulk_download(
                 if page is None:
                     _open_browser()
                 dest = config.FEEDS_DIR / (sanitize(item["category"]) or "Imported") / (sanitize(item["subcategory"]) or "Imported")
+                state.update(bytes_done=0, bytes_total=0)
+                last_emit = [0.0]
+
+                def _bytes(done: int, total: int, _name: str = ""):
+                    state.update(bytes_done=done, bytes_total=total)
+                    if time.monotonic() - last_emit[0] > 0.4 or (total and done >= total):
+                        last_emit[0] = time.monotonic()
+                        _emit()
+
                 res = resolve_and_download_single_article(
                     item["link"],
                     download_model=download_model,
                     download_imgs=download_imgs,
                     dest_dir=dest,
                     log_cb=log_cb,
+                    progress_cb=_bytes,
                     page=page,
                     title_hint=item["title"],
                 )
@@ -457,6 +469,15 @@ def bulk_download(
                 res = {"error": str(e)}
                 _log(f"Error on {label[:60]}: {e}")
                 _close_browser()  # next article starts from a fresh browser
+
+            if not ok and page is not None:
+                # A failed goto can leave a navigation pending on the page, which then
+                # interrupts every following article; give the next one a clean tab.
+                try:
+                    page.close()
+                    page = context.new_page()
+                except Exception:
+                    _close_browser()
 
             if ok:
                 state["succeeded"] += 1

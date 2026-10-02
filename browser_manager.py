@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Playwright
 
-from config import USER_AGENT, HEADLESS, BRAVE_PATH, CHROME_PATH, DATA_DIR
+from config import USER_AGENT, HEADLESS, BRAVE_PATH, CHROME_PATH, DATA_DIR, CGTIPS_HOST_RESOLVER_RULES
 
 logger = logging.getLogger("browser_manager")
 
@@ -60,7 +60,7 @@ class BrowserManager:
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    "--host-resolver-rules=MAP sketchup.cgtips.org 104.21.74.130, MAP cgtips.org 104.21.74.130, MAP www.cgtips.org 104.21.74.130",
+                    CGTIPS_HOST_RESOLVER_RULES,
                 ],
             )
             context = browser.new_context(
@@ -82,7 +82,7 @@ class BrowserManager:
                     args=[
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
-                        "--host-resolver-rules=MAP sketchup.cgtips.org 104.21.74.130, MAP cgtips.org 104.21.74.130, MAP www.cgtips.org 104.21.74.130",
+                        CGTIPS_HOST_RESOLVER_RULES,
                     ],
                 )
                 context = browser.new_context(

@@ -200,7 +200,7 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Text {
-                    text: "You haven't downloaded any 3D models yet.\nUse Explore, the Direct Resolver or a bulk download —\nor import models you already have with Import folder / Import files."
+                    text: "You haven't downloaded any 3D models yet.\nUse Categories & Feeds, the Direct Resolver or a bulk download —\nor import models you already have with Import folder / Import files."
                     color: Theme.textMuted
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter

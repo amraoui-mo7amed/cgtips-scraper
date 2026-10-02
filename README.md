@@ -6,11 +6,6 @@ A modern, high-performance native desktop application built with **PySide6 (Qt Q
 
 ## 🌟 Key Features
 
-- **Explore & Remote Search**:
-  - Live search across thousands of SketchUp 3D models with quick keyword suggestions.
-  - Responsive 3-card widescreen grid with high-resolution thumbnail previews.
-  - Instant article link copy with clipboard toast notifications and direct web links.
-
 - **Categories & Feeds**:
   - Taxonomy hierarchy picker modal with tree navigation.
   - Live RSS feed preview with publish dates and batch scrape triggers.
@@ -19,6 +14,8 @@ A modern, high-performance native desktop application built with **PySide6 (Qt Q
 - **Direct URL Resolver**:
   - Bypass countdown lockers and fetch 3D model archives (`.zip`) directly.
   - Real-time resolution logs streamed directly into the desktop console.
+
+- **Download Status**: a header button shows running downloads and imports; click it for every job's progress, size and failure reason.
 
 - **Downloads Library**:
   - Manage locally downloaded SketchUp models with file sizes and thumbnail previews.

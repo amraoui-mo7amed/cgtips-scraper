@@ -37,6 +37,15 @@ def _safe_name(name: str, limit: int = 80) -> str:
     return re.sub(r'[<>:"/\\|?*]', "_", name).strip(" .")[:limit].rstrip(" .") or UNSORTED
 
 
+def _describe_error(e: Exception) -> str:
+    """Short, user-facing reason for a failed file operation."""
+    if isinstance(e, OSError) and (e.errno == 28 or getattr(e, "winerror", None) == 112):
+        return "Disk is full"
+    if isinstance(e, PermissionError):
+        return "Permission denied"
+    return (getattr(e, "strerror", None) or str(e))[:120]
+
+
 def _is_within(child: Path, parent: Path) -> bool:
     try:
         child.resolve().relative_to(parent.resolve())
@@ -111,7 +120,11 @@ class LibraryManager:
         model_file = None
         model_size = 0
         if model_dir.is_dir():
-            model_files = sorted(f for f in model_dir.iterdir() if f.is_file() and not f.name.startswith("."))
+            # zero-byte files are leftovers of an interrupted copy (e.g. disk full), not models
+            model_files = sorted(
+                f for f in model_dir.iterdir()
+                if f.is_file() and not f.name.startswith(".") and f.stat().st_size > 0
+            )
             if model_files:
                 model_file = model_files[0]
                 model_size = model_file.stat().st_size
@@ -164,7 +177,9 @@ class LibraryManager:
                 for article_dir in _visible_dirs(sub_dir):
                     if article_dir.name == "model":
                         continue
-                    found.append(self._scan_article(article_dir, cat_dir.name, sub_dir.name))
+                    item = self._scan_article(article_dir, cat_dir.name, sub_dir.name)
+                    if item["has_model"] or item["images_count"] or item["article_url"]:
+                        found.append(item)  # skip empty shells left by failed downloads/imports
 
         total_models = sum(1 for i in found if i["has_model"])
         total_images = sum(i["images_count"] for i in found)
@@ -250,29 +265,54 @@ class LibraryManager:
         sub = _safe_name(parents[-1]) if len(parents) >= 1 else UNSORTED
         dest = self.base_dir / category / sub / _safe_name(art["name"])
         model_dir = dest / "model"
+        dest_existed = dest.exists()
         model_dir.mkdir(parents=True, exist_ok=True)
 
         transfer = shutil.move if move else shutil.copy2
         changed = False
+        created: List[Path] = []
 
-        for m in art["models"]:
-            target = model_dir / m.name
-            if target.exists() and target.stat().st_size == m.stat().st_size:
-                continue
-            transfer(str(m), str(target))
-            changed = True
+        try:
+            for m in art["models"]:
+                target = model_dir / m.name
+                if target.exists() and target.stat().st_size == m.stat().st_size:
+                    continue
+                created.append(target)
+                transfer(str(m), str(target))
+                changed = True
 
-        existing_imgs = [i for i in dest.iterdir() if i.is_file() and i.suffix.lower() in IMAGE_EXTS]
-        existing_sizes = {i.stat().st_size for i in existing_imgs}
-        n = len(existing_imgs)
-        for img in art["images"]:
-            if img.stat().st_size in existing_sizes:
-                continue  # same picture already imported
-            n += 1
-            while (dest / f"image_{n}{img.suffix.lower()}").exists():
+            existing_imgs = [i for i in dest.iterdir() if i.is_file() and i.suffix.lower() in IMAGE_EXTS]
+            existing_sizes = {i.stat().st_size for i in existing_imgs}
+            n = len(existing_imgs)
+            for img in art["images"]:
+                if img.stat().st_size in existing_sizes:
+                    continue  # same picture already imported
                 n += 1
-            transfer(str(img), str(dest / f"image_{n}{img.suffix.lower()}"))
-            changed = True
+                while (dest / f"image_{n}{img.suffix.lower()}").exists():
+                    n += 1
+                created.append(dest / f"image_{n}{img.suffix.lower()}")
+                transfer(str(img), str(created[-1]))
+                changed = True
+
+            if n == 0:
+                created.extend(self._extract_zip_previews(model_dir, dest))
+                changed = changed or bool(created)
+        except Exception:
+            # Don't leave half-copied files or empty folders behind (e.g. disk full).
+            if not move:
+                for f in created:
+                    try:
+                        f.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            if not dest_existed:
+                shutil.rmtree(dest, ignore_errors=True)
+            else:
+                try:
+                    model_dir.rmdir()  # only if still empty
+                except OSError:
+                    pass
+            raise
 
         if changed:
             meta = self.get_meta(dest)
@@ -280,6 +320,27 @@ class LibraryManager:
             meta.setdefault("title", art["name"])
             self.save_meta(dest, meta)
         return "imported" if changed else "skipped"
+
+    def _extract_zip_previews(self, model_dir: Path, dest: Path, limit: int = 4) -> List[Path]:
+        """Pulls preview pictures out of a .zip model when no images came with it."""
+        out: List[Path] = []
+        for archive in sorted(model_dir.glob("*.zip")):
+            try:
+                with zipfile.ZipFile(archive) as zf:
+                    pics = [i for i in zf.infolist()
+                            if not i.is_dir() and Path(i.filename).suffix.lower() in IMAGE_EXTS
+                            and 0 < i.file_size < 20 * 1024 * 1024]
+                    pics.sort(key=lambda i: i.file_size, reverse=True)
+                    for info in pics[:limit]:
+                        target = dest / f"image_{len(out) + 1}{Path(info.filename).suffix.lower()}"
+                        with zf.open(info) as src, open(target, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        out.append(target)
+            except zipfile.BadZipFile:
+                continue
+            if out:
+                break
+        return out
 
     def import_paths(
         self,
@@ -318,7 +379,23 @@ class LibraryManager:
                     "images": [i for i in images if i.stem.startswith(m.stem)],
                 })
 
-        stats = {"found": len(arts), "imported": 0, "skipped": 0, "failed": 0, "notes": notes}
+        stats = {"found": len(arts), "imported": 0, "skipped": 0, "failed": 0, "notes": notes, "errors": []}
+
+        # Copies (or moves to another drive) need room on the library's drive: check up front
+        # instead of failing on every article once the disk fills up.
+        needed = sum(
+            f.stat().st_size
+            for art in arts for f in art["models"] + art["images"]
+            if not move or f.anchor.lower() != base.anchor.lower()
+        )
+        free = shutil.disk_usage(base).free
+        if needed > free:
+            raise OSError(
+                f"Not enough disk space: the import needs {format_bytes(needed)} but only "
+                f"{format_bytes(free)} is free on {base.anchor}. Free some space or change the "
+                f"storage location in Settings."
+            )
+
         for idx, art in enumerate(arts, 1):
             try:
                 outcome = self._import_article(art, move)
@@ -327,9 +404,12 @@ class LibraryManager:
                     log_cb(f"{outcome.capitalize()}: {art['name'][:70]}")
             except Exception as e:
                 stats["failed"] += 1
+                reason = _describe_error(e)
+                if reason not in stats["errors"]:
+                    stats["errors"].append(reason)
                 logger.warning("Import failed for %s: %s", art["name"], e)
                 if log_cb:
-                    log_cb(f"Failed: {art['name'][:60]} ({e})")
+                    log_cb(f"Failed: {art['name'][:60]} ({reason})")
             if progress_cb:
                 progress_cb(idx, len(arts))
         return stats

@@ -17,9 +17,8 @@ Rectangle {
     border.color: Theme.border
     border.width: 1
 
-    property string title: "Explore"
+    property string title: "CGTips 3D"
     property string subtitle: "Discover 3D models"
-    signal searchRequested(string query)
 
     RowLayout {
         anchors.fill: parent
@@ -46,66 +45,15 @@ Rectangle {
             Layout.fillWidth: true
         }
 
-        // Global Quick Search Field
-        Rectangle {
-            width: 260
-            height: 36
-            radius: Theme.radiusMd
-            color: Theme.surfaceElevated
-            border.color: headerSearchInput.activeFocus ? Theme.primary : Theme.border
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                spacing: 8
-
-                FaIcon {
-                    icon: Icons.search
-                    size: 12
-                    iconColor: Theme.textMuted
-                }
-
-                TextInput {
-                    id: headerSearchInput
-                    Layout.fillWidth: true
-                    color: Theme.textPrimary
-                    font.pixelSize: 12
-                    selectByMouse: true
-                    clip: true
-
-                    Text {
-                        text: "Quick search models..."
-                        color: Theme.textMuted
-                        font.pixelSize: 12
-                        visible: !headerSearchInput.text && !headerSearchInput.activeFocus
-                    }
-
-                    onAccepted: {
-                        if (text.trim().length > 0) {
-                            root.searchRequested(text.trim())
-                        }
-                    }
-                }
-
-                FaIcon {
-                    icon: Icons.times
-                    size: 11
-                    iconColor: Theme.textMuted
-                    visible: headerSearchInput.text.length > 0
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: headerSearchInput.text = ""
-                    }
-                }
-            }
+        // Download / import status (click for the full list)
+        DownloadStatusWidget {
+            Layout.preferredWidth: implicitWidth
         }
 
         // Open Local Storage Button
         Rectangle {
-            width: 110
+            width: 36
             height: 36
             radius: Theme.radiusMd
             color: storageMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2) : Theme.surfaceElevated
@@ -118,12 +66,6 @@ Rectangle {
                     icon: Icons.folderOpen
                     size: 12
                     iconColor: Theme.primaryLight
-                }
-                Text {
-                    text: "Storage"
-                    color: Theme.primaryLight
-                    font.pixelSize: 11
-                    font.bold: true
                 }
             }
 

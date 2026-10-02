@@ -15,7 +15,7 @@ ApplicationWindow {
     title: "CGTips 3D • Desktop Platform"
     color: Theme.background
 
-    property int activeTab: 1
+    property int activeTab: 0
 
     // Font Awesome Loaders
     FontLoader {
@@ -70,27 +70,21 @@ ApplicationWindow {
                 Layout.fillHeight: false
                 title: {
                     switch (window.activeTab) {
-                        case 0: return "Explore 3D Models";
-                        case 1: return "Categories & Feeds";
-                        case 2: return "Direct URL Resolver";
-                        case 3: return "Downloads Library";
-                        case 4: return "Settings & Integration";
+                        case 0: return "Categories & Feeds";
+                        case 1: return "Direct URL Resolver";
+                        case 2: return "Downloads Library";
+                        case 3: return "Settings & Integration";
                         default: return "CGTips 3D";
                     }
                 }
                 subtitle: {
                     switch (window.activeTab) {
-                        case 0: return "Search and discover free SketchUp 3D models from CGTips";
-                        case 1: return "Browse category hierarchy and live RSS article feeds";
-                        case 2: return "Bypass download lockers and fetch 3D model archives";
-                        case 3: return "Manage and download locally saved 3D models";
-                        case 4: return "Storage location, cache backup and local statistics";
+                        case 0: return "Browse category hierarchy and live RSS article feeds";
+                        case 1: return "Bypass download lockers and fetch 3D model archives";
+                        case 2: return "Manage and download locally saved 3D models";
+                        case 3: return "Storage location, cache backup and local statistics";
                         default: return "";
                     }
-                }
-                onSearchRequested: function(query) {
-                    window.activeTab = 0
-                    Bridge.performSearch(query, 1)
                 }
             }
 
@@ -101,17 +95,6 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 currentIndex: window.activeTab
 
-                ExploreView {
-                    id: exploreView
-                    onOpenGallery: function(images, title) {
-                        lightbox.open(images, title, 0)
-                    }
-                    onResolveRequested: function(link) {
-                        resolverView.setUrl(link)
-                        window.activeTab = 2
-                    }
-                }
-
                 CategoriesView {
                     id: categoriesView
                     onOpenCategoryModalRequested: function() {
@@ -119,7 +102,7 @@ ApplicationWindow {
                     }
                     onResolveRequested: function(link) {
                         resolverView.setUrl(link)
-                        window.activeTab = 2
+                        window.activeTab = 1
                     }
                 }
 
@@ -160,7 +143,7 @@ ApplicationWindow {
         selectedFeedUrl: categoriesView.selectedFeedUrl
         onSubcategorySelected: function(catTitle, subTitle, feedUrl) {
             categoriesView.selectSubcategory(catTitle, subTitle, feedUrl)
-            window.activeTab = 1
+            window.activeTab = 0
         }
     }
 

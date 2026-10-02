@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -225,15 +226,25 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
     total = int(r.headers.get("Content-Length", 0))
     downloaded = 0
 
-    with open(path, "wb") as f:
-        with tqdm(total=total, unit='B', unit_scale=True, desc=name[:35], leave=False) as pbar:
-            for chunk in r.iter_content(chunk_size=16384):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    pbar.update(len(chunk))
-                    if progress_cb:
-                        progress_cb(downloaded, total, name)
+    # Write to a hidden temp file and only rename once complete, so an interrupted
+    # download (disk full, network drop) never shows up as a finished model.
+    part = dest_path / f".{name}.part"
+    try:
+        with open(part, "wb") as f:
+            with tqdm(total=total, unit='B', unit_scale=True, desc=name[:35], leave=False) as pbar:
+                for chunk in r.iter_content(chunk_size=16384):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        pbar.update(len(chunk))
+                        if progress_cb:
+                            progress_cb(downloaded, total, name)
+        if total and downloaded < total:
+            raise IOError(f"Download incomplete: {downloaded} of {total} bytes")
+        os.replace(part, path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
 
     return str(path)
 

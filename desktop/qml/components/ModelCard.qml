@@ -14,6 +14,9 @@ Rectangle {
     clip: true
 
     property var itemData: ({})
+    // Library items (local folders) get a download status badge and local actions
+    readonly property bool isLibrary: root.itemData.folder_path !== undefined
+    readonly property bool modelReady: root.isLibrary && !!root.itemData.has_model
     signal openGallery(var images, string title)
     signal resolveRequested(string link)
 
@@ -98,8 +101,37 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
+                // Library: model download status
+                Rectangle {
+                    visible: root.isLibrary
+                    width: libStatusRow.implicitWidth + 16
+                    height: 22
+                    radius: 4
+                    color: root.modelReady ? "#064E3B" : "#451A03"
+                    border.color: root.modelReady ? Theme.success : Theme.warning
+                    border.width: 1
+
+                    RowLayout {
+                        id: libStatusRow
+                        anchors.centerIn: parent
+                        spacing: 5
+                        FaIcon {
+                            icon: root.modelReady ? Icons.checkCircle : Icons.exclamationTriangle
+                            size: 9
+                            iconColor: root.modelReady ? Theme.success : Theme.warning
+                        }
+                        Text {
+                            text: root.modelReady ? ("Downloaded · " + root.itemData.model_size) : "Model missing"
+                            color: "#F8FAFC"
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                    }
+                }
+
                 // Right Badge (Date or Status / Ready)
                 Rectangle {
+                    visible: !root.isLibrary
                     width: Math.max(90, rightBadgeRow.implicitWidth + 18)
                     height: 22
                     radius: 4
@@ -167,8 +199,51 @@ Rectangle {
 
             Item { Layout.fillHeight: true }
 
+            // Library details line
+            Text {
+                visible: root.isLibrary
+                text: {
+                    var parts = [root.itemData.category + " › " + root.itemData.subcategory];
+                    parts.push((root.itemData.images_count || 0) + " images");
+                    if (root.itemData.imported) parts.push("imported");
+                    return parts.join("  ·  ");
+                }
+                color: Theme.textMuted
+                font.pixelSize: 10
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+
+            // Library Actions
+            RowLayout {
+                visible: root.isLibrary
+                Layout.fillWidth: true
+                spacing: 6
+
+                ActionButton {
+                    Layout.fillWidth: true
+                    implicitHeight: 32
+                    primary: true
+                    text: root.modelReady ? "Open folder" : (root.itemData.article_url ? "Download model" : "Open folder")
+                    icon: root.modelReady || !root.itemData.article_url ? Icons.folderOpen : Icons.download
+                    onClicked: {
+                        if (!root.modelReady && root.itemData.article_url)
+                            Bridge.retryLibraryModel(root.itemData.folder_path)
+                        else
+                            Bridge.openFolder(root.itemData.folder_path)
+                    }
+                }
+                ActionButton {
+                    visible: !!root.itemData.article_url
+                    implicitHeight: 32
+                    icon: Icons.externalLink
+                    onClicked: Bridge.openWeb(root.itemData.article_url)
+                }
+            }
+
             // Card Actions
             RowLayout {
+                visible: !root.isLibrary
                 Layout.fillWidth: true
                 spacing: 6
 

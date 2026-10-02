@@ -7,6 +7,12 @@ import os
 import sys
 from pathlib import Path
 
+# Some Windows Pythons (e.g. Microsoft Store) don't put PySide6's folder on the
+# DLL search path, so QML plugins like QtQuick.Controls fail to load.
+if sys.platform == "win32" and not getattr(sys, "frozen", False):
+    import PySide6
+    os.add_dll_directory(os.path.dirname(PySide6.__file__))
+
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonInstance

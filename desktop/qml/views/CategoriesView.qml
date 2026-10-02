@@ -565,9 +565,36 @@ Item {
 
                                 Item { Layout.fillWidth: true }
 
+                                // Already in the library
+                                Rectangle {
+                                    visible: !!modelData.downloaded
+                                    Layout.preferredWidth: dlBadgeRow.implicitWidth + 16
+                                    Layout.preferredHeight: 22
+                                    radius: 4
+                                    color: "#064E3B"
+                                    border.color: Theme.success
+                                    border.width: 1
+                                    RowLayout {
+                                        id: dlBadgeRow
+                                        anchors.centerIn: parent
+                                        spacing: 5
+                                        FaIcon {
+                                            icon: Icons.checkCircle
+                                            size: 9
+                                            iconColor: Theme.success
+                                        }
+                                        Text {
+                                            text: "Downloaded"
+                                            color: "#F8FAFC"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+
                                 // Date Badge (wide, dark bg, light text)
                                 Rectangle {
-                                    visible: !!modelData.published
+                                    visible: !!modelData.published && !modelData.downloaded
                                     width: Math.max(96, dateBadgeRow.implicitWidth + 18)
                                     height: 22
                                     Layout.preferredWidth: width
@@ -641,12 +668,12 @@ Item {
                                         anchors.centerIn: parent
                                         spacing: 6
                                         FaIcon {
-                                            icon: Icons.bolt
+                                            icon: modelData.downloaded ? Icons.folderOpen : Icons.bolt
                                             size: 10
                                             iconColor: "white"
                                         }
                                         Text {
-                                            text: "Scrape"
+                                            text: modelData.downloaded ? "Open folder" : "Scrape"
                                             color: "white"
                                             font.pixelSize: 11
                                             font.bold: true
@@ -659,6 +686,10 @@ Item {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
+                                            if (modelData.downloaded) {
+                                                Bridge.openFolder(modelData.local_folder)
+                                                return
+                                            }
                                             Bridge.resolveArticle(modelData.link, true, true)
                                             root.resolveRequested(modelData.link)
                                         }

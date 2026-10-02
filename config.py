@@ -8,7 +8,7 @@ from decouple import config
 
 # Ensure reliable Cloudflare Anycast IP resolution for CGTips domains
 # across regions where local DNS returns unreachable edge IPs (causing HTTP timeouts)
-_CGTIPS_HOSTS = ("sketchup.cgtips.org", "cgtips.org", "www.cgtips.org")
+_CGTIPS_HOSTS = ("sketchup.cgtips.org", "cgtips.org", "www.cgtips.org", "link.cgtips.org")
 _CGTIPS_FALLBACK_IP = "104.21.74.130"
 
 _ORIG_GETADDRINFO = socket.getaddrinfo
@@ -19,6 +19,11 @@ def _cgtips_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
 
 socket.getaddrinfo = _cgtips_getaddrinfo
+
+# Same pinning for the Playwright browser, which does its own DNS resolution
+CGTIPS_HOST_RESOLVER_RULES = "--host-resolver-rules=" + ", ".join(
+    f"MAP {h} {_CGTIPS_FALLBACK_IP}" for h in _CGTIPS_HOSTS
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
