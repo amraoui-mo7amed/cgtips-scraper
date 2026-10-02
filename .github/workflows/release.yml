@@ -77,6 +77,34 @@ jobs:
         run: |
           pyinstaller --clean -y cgtips_desktop.spec
 
+      - name: Smoke test - launch the packaged app
+        shell: pwsh
+        run: |
+          $browsers = Get-ChildItem -Directory dist/CGTips-3D/_internal/playwright/driver/package/.local-browsers -ErrorAction SilentlyContinue
+          Write-Host "Bundled browsers: $($browsers.Name -join ', ')"
+          if (-not $browsers) { Write-Host "::error::Chromium missing from bundle"; exit 1 }
+          $env:QT_QUICK_BACKEND = "software"
+          $p = Start-Process -FilePath dist/CGTips-3D/CGTips-3D.exe -PassThru `
+                 -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          Start-Sleep -Seconds 25
+          Write-Host "--- stdout ---"; Get-Content out.txt -ErrorAction SilentlyContinue
+          Write-Host "--- stderr ---"; Get-Content err.txt -ErrorAction SilentlyContinue
+          if ($p.HasExited) { Write-Host "::error::App exited early with code $($p.ExitCode)"; exit 1 }
+          Write-Host "App is running (pid $($p.Id), window title: '$($p.MainWindowTitle)')"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("smoke.png")
+          Stop-Process -Id $p.Id -Force
+
+      - name: Upload smoke-test screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-test
+          path: smoke.png
+          if-no-files-found: ignore
+
       - name: Package Windows Binary
         shell: pwsh
         run: |
