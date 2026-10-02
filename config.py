@@ -36,6 +36,8 @@ CHROME_PATH = config("CHROME_PATH", default="")
 
 # Data and Storage Paths
 if getattr(sys, "frozen", False):
+    # Packaged builds ship Chromium inside the playwright package ("0" = look there)
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
     _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
     if sys.platform == "darwin":
         _USER_DATA = Path.home() / "Library" / "Application Support" / "CGTips 3D"

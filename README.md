@@ -46,7 +46,7 @@ A modern, high-performance native desktop application built with **PySide6 (Qt Q
 Download precompiled standalone binaries for macOS and Windows from the [GitHub Releases](https://github.com/amraoui-mo7amed/cgtips-scraper/releases) page:
 
 - **macOS**: `CGTips-3D-macOS.dmg` or `CGTips-3D-macOS.zip` (Apple Silicon & Intel)
-- **Windows**: `CGTips-3D-Windows.zip` (contains `CGTips-3D.exe`)
+- **Windows**: `CGTips-3D-Windows.zip` — unzip the whole folder and run `CGTips-3D.exe` (keep it next to its `_internal` folder; Chromium is bundled, no install needed)
 
 ---
 

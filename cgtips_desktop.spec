@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -13,8 +14,17 @@ datas = [
 if (ROOT_DIR / 'data').exists():
     datas.append((str(ROOT_DIR / 'data'), 'data'))
 
+# Playwright: its Node driver and (when installed with PLAYWRIGHT_BROWSERS_PATH=0)
+# the bundled Chromium live inside the package directory, so ship all of it.
+datas += collect_data_files('playwright', include_py_files=False)
+datas += collect_data_files('cloudscraper')
+datas += collect_data_files('googleapiclient')   # discovery documents
 
-hiddenimports = [
+
+hiddenimports = collect_submodules('playwright') + collect_submodules('googleapiclient') + [
+    'lxml', 'lxml.etree',
+    'google_auth_oauthlib', 'google_auth_oauthlib.flow',
+    'google.auth.transport.requests', 'google_auth_httplib2',
     'PySide6.QtQuick',
     'PySide6.QtQml',
     'PySide6.QtQuickControls2',

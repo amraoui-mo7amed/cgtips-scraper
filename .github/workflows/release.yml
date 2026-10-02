@@ -28,6 +28,10 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Bundle Playwright Chromium into the package
+        run: |
+          PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium
+
       - name: Build macOS App with PyInstaller
         run: |
           pyinstaller --clean -y cgtips_desktop.spec
@@ -63,6 +67,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Bundle Playwright Chromium into the package
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = "0"
+          playwright install chromium
+
       - name: Build Windows Executable with PyInstaller
         run: |
           pyinstaller --clean -y cgtips_desktop.spec
@@ -71,7 +81,6 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path dist/CGTips-3D -DestinationPath dist/CGTips-3D-Windows.zip -Force
-          Copy-Item dist/CGTips-3D/CGTips-3D.exe dist/CGTips-3D.exe -ErrorAction SilentlyContinue
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -79,7 +88,6 @@ jobs:
           name: windows-binaries
           path: |
             dist/CGTips-3D-Windows.zip
-            dist/CGTips-3D.exe
 
   publish-release:
     needs: [build-macos, build-windows]
@@ -110,4 +118,3 @@ jobs:
             release-assets/CGTips-3D-macOS.dmg
             release-assets/CGTips-3D-macOS.zip
             release-assets/CGTips-3D-Windows.zip
-            release-assets/CGTips-3D.exe
