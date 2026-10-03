@@ -105,6 +105,21 @@ def main():
     sys.exit(app.exec())
 
 
+def self_test(report_path):
+    """Used by CI: write a download progress bar, print and log the way a real
+    download does, then report success. Catches crashes like a missing console."""
+    import logging
+    from tqdm import tqdm
+    with tqdm(total=1024, unit="B", unit_scale=True, desc="self-test", leave=False) as pbar:
+        for _ in range(4):
+            pbar.update(256)
+    print("self-test stdout")
+    logging.getLogger("cgtips").warning("self-test log")
+    Path(report_path).write_text("OK", encoding="utf-8")
+
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":
+        self_test(sys.argv[2])
+        sys.exit(0)
     main()

@@ -90,6 +90,14 @@ jobs:
           $browsers = Get-ChildItem -Directory dist/CGTips-3D/_internal/playwright/driver/package/.local-browsers -ErrorAction SilentlyContinue
           Write-Host "Bundled browsers: $($browsers.Name -join ', ')"
           if (-not $browsers) { Write-Host "::error::Chromium missing from bundle"; exit 1 }
+          # Run the download progress path with no console attached (no redirection),
+          # exactly as when the user double-clicks the exe.
+          $report = Join-Path $PWD "selftest.txt"
+          $t = Start-Process -FilePath dist/CGTips-3D/CGTips-3D.exe -ArgumentList "--self-test", "`"$report`"" -PassThru -Wait
+          if ($t.ExitCode -ne 0 -or (Get-Content $report -ErrorAction SilentlyContinue) -ne "OK") {
+            Write-Host "::error::Self-test failed (exit code $($t.ExitCode))"; exit 1
+          }
+          Write-Host "Self-test passed: download progress output works without a console"
           $env:QT_QUICK_BACKEND = "software"
           $p = Start-Process -FilePath dist/CGTips-3D/CGTips-3D.exe -PassThru `
                  -RedirectStandardOutput out.txt -RedirectStandardError err.txt
