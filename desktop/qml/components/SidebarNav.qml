@@ -18,7 +18,7 @@ Rectangle {
     border.color: Theme.border
     border.width: 1
 
-    property int activeTab: 0 // 0: Categories, 1: Resolver, 2: Library, 3: Settings
+    property int activeTab: 0 // 0: Categories, 1: Resolver, 2: Queue, 3: Library, 4: Settings
     signal tabSelected(int index)
 
     ColumnLayout {
@@ -78,8 +78,9 @@ Rectangle {
                 model: [
                     { name: "Categories & Feeds", icon: Icons.layerGroup, index: 0 },
                     { name: "Direct Resolver", icon: Icons.bolt, index: 1 },
-                    { name: "Downloads Library", icon: Icons.cubes, index: 2 },
-                    { name: "Settings & Status", icon: Icons.gear, index: 3 }
+                    { name: "Download Queue", icon: Icons.listOl, index: 2 },
+                    { name: "Downloads Library", icon: Icons.cubes, index: 3 },
+                    { name: "Settings & Status", icon: Icons.gear, index: 4 }
                 ]
 
                 delegate: Rectangle {

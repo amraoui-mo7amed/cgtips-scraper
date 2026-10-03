@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QFileDialog
 
 import config
 import history
+from download_queue import DownloadQueue
 from .library import format_bytes as _fmt_bytes
 
 logger = logging.getLogger("app_bridge")
@@ -109,7 +110,8 @@ class AppBridge(QObject):
     resolverLogsChanged = Signal()
 
     feedsDirChanged = Signal()
-    bulkStateChanged = Signal()
+    queueChanged = Signal()
+    queueProgressChanged = Signal()
     maintenanceChanged = Signal()
     libraryImported = Signal()
     downloadJobsChanged = Signal()
@@ -145,7 +147,6 @@ class AppBridge(QObject):
         self._library_items: List[Dict[str, Any]] = []
         self._downloaded_index: Dict[str, str] = {}  # article url / title key -> library folder
         self._library_query = ("", "all")  # last search / category the library view asked for
-        self._last_completed_seq = 0
         self._library_loading = False
         self._library_total = 0
 
@@ -153,16 +154,27 @@ class AppBridge(QObject):
         self._is_resolving = False
         self._resolver_logs: List[str] = []
 
-        self._bulk_state: Dict[str, Any] = {}
         self._maintenance_busy = False
         self._maintenance_message = ""
 
         # Download / import jobs shown in the header's status widget (newest first)
         self._jobs: List[Dict[str, Any]] = []
         self._job_seq = 0
-        self._bulk_job_id = 0
 
         self._runOnMain.connect(self._execute_on_main)
+
+        # Download queue (bulk downloads and "download selected" go through it)
+        self._queue_items: List[Dict[str, Any]] = []
+        self._queue_stats: Dict[str, Any] = {}
+        self._queue_progress: Dict[str, Any] = {}
+        self._queue_job_id = 0
+        self._queue_user_paused = False
+        self.queue = DownloadQueue(
+            on_change=lambda: self._runOnMain.emit(self._refresh_queue),
+            on_progress=lambda i, d, t: self._runOnMain.emit(lambda: self._queue_bytes(i, d, t)),
+            on_item_done=lambda item: self._runOnMain.emit(lambda: self._add_to_library(item["folder"])),
+        )
+        self._refresh_queue()
 
     @Slot(object)
     def _execute_on_main(self, fn):
@@ -186,13 +198,21 @@ class AppBridge(QObject):
     def feedsDir(self) -> str:
         return str(config.FEEDS_DIR)
 
-    @Property("QVariant", notify=bulkStateChanged)
-    def bulkState(self) -> Dict[str, Any]:
-        return self._bulk_state
+    @Property("QVariant", notify=queueChanged)
+    def queueItems(self) -> List[Dict[str, Any]]:
+        return self._queue_items
 
-    @Property(bool, notify=bulkStateChanged)
+    @Property("QVariant", notify=queueChanged)
+    def queueStats(self) -> Dict[str, Any]:
+        return self._queue_stats
+
+    @Property("QVariant", notify=queueProgressChanged)
+    def queueProgress(self) -> Dict[str, Any]:
+        return self._queue_progress
+
+    @Property(bool, notify=queueChanged)
     def isBulkRunning(self) -> bool:
-        return bool(self._bulk_state.get("running"))
+        return bool(self._queue_stats.get("running"))
 
     @Property("QVariant", notify=downloadJobsChanged)
     def downloadJobs(self) -> List[Dict[str, Any]]:
@@ -631,79 +651,52 @@ class AppBridge(QObject):
             clipboard.setText(clean_text)
             self.toast.emit("success", "Link copied to clipboard!")
 
-    # --- Bulk download ---
+    # --- Download queue ---
 
-    def _launch_bulk(self, groups: List[Dict[str, Any]], max_items: int, download_model: bool, download_images: bool):
-        if self.service.is_bulk_running():
-            self.toast.emit("warning", "A bulk download is already running")
-            return
-        if not groups:
-            self.toast.emit("warning", "Nothing selected to download")
-            return
+    def _refresh_queue(self):
+        self._queue_items = self.queue.items()
+        st = self.queue.stats()
+        self._queue_stats = st
+        if st["current_id"] != self._queue_progress.get("id"):
+            self._queue_progress = {"id": st["current_id"], "done": 0, "total": 0}
+            self.queueProgressChanged.emit()
+        self.queueChanged.emit()
+
+        # One row in the header's download widget for the whole queue.
+        busy = st["running"] or bool(st["listing"])
+        done = st["finished"]
+        title = f"Download queue  {done} / {st['total']}"
+        if busy:
+            if not self._queue_job_id or self._job_status(self._queue_job_id) != "running":
+                self._queue_job_id = self._job_add("queue", title, "Starting...")
+            self._job_update(self._queue_job_id, title=title, status="running",
+                             progress=(done / st["total"]) if st["total"] else -1.0,
+                             detail=st["listing"] or st["current_title"] or "")
+        elif self._queue_job_id and self._job_status(self._queue_job_id) == "running":
+            if st["is_paused"] and st["active"]:
+                status, detail = "cancelled", f"Paused, {st['active']} waiting"
+            elif st["failed"] and not st["done"]:
+                status, detail = "failed", f"{st['failed']} failed"
+            else:
+                status, detail = "done", f"{st['done']} downloaded, {st['skipped']} skipped, {st['failed']} failed"
+            self._job_update(self._queue_job_id, title=title, status=status, progress=1.0, detail=detail)
+
+    def _job_status(self, job_id: int) -> str:
+        return next((j["status"] for j in self._jobs if j["id"] == job_id), "")
+
+    def _queue_bytes(self, item_id: int, done: int, total: int):
+        self._queue_progress = {"id": item_id, "done": done, "total": total}
+        self.queueProgressChanged.emit()
+        if self._queue_job_id:
+            title = self._queue_stats.get("current_title", "")
+            size = _fmt_bytes(done) + (f" / {_fmt_bytes(total)}" if total else "")
+            self._job_update(self._queue_job_id, detail=f"{title[:60]}  ({size})")
+
+    def _check_queue_options(self, download_model: bool, download_images: bool) -> bool:
         if not (download_model or download_images):
             self.toast.emit("warning", "Enable at least Models or Images")
-            return
-
-        self._bulk_state = {"running": True, "phase": "listing", "total": 0, "done": 0, "succeeded": 0,
-                            "skipped": 0, "failed": 0, "current": "Starting...", "cancelled": False, "failures": []}
-        self.bulkStateChanged.emit()
-        self._bulk_job_id = self._job_add("bulk", "Bulk download", "Reading feeds...")
-        self._last_completed_seq = 0
-
-        def _on_state(state: Dict[str, Any]):
-            self._runOnMain.emit(lambda: self._apply_bulk_state(state))
-
-        def _task():
-            return self.service.bulk_download(
-                groups, download_model=download_model, download_images=download_images,
-                max_items=max_items, state_cb=_on_state,
-            )
-
-        def _on_success(state):
-            self._apply_bulk_state(state)
-            msg = (f"Bulk download {'cancelled' if state.get('cancelled') else 'finished'}: "
-                   f"{state.get('succeeded', 0)} downloaded, {state.get('skipped', 0)} skipped, "
-                   f"{state.get('failed', 0)} failed")
-            self.toast.emit("warning" if state.get("failed") or state.get("cancelled") else "success", msg)
-            self.loadLibrary(*self._library_query)
-            self.refreshStatus()
-
-        def _on_error(exc):
-            self._bulk_state = dict(self._bulk_state, running=False, phase="finished", current="")
-            self.bulkStateChanged.emit()
-            self._job_update(self._bulk_job_id, status="failed", detail=str(exc)[:160])
-            self.toast.emit("error", f"Bulk download failed: {exc}")
-
-        self._start(_task, _on_success, _on_error)
-
-    def _apply_bulk_state(self, state: Dict[str, Any]):
-        self._bulk_state = state
-        self.bulkStateChanged.emit()
-        done_item = state.get("last_completed") or {}
-        if done_item.get("seq", 0) > self._last_completed_seq:
-            self._last_completed_seq = done_item["seq"]
-            self._add_to_library(done_item["folder"])
-        if not self._bulk_job_id:
-            return
-        total, done = state.get("total", 0), state.get("done", 0)
-        if state.get("running"):
-            detail = state.get("current") or ""
-            if state.get("bytes_total"):
-                detail += f"  ({_fmt_bytes(state.get('bytes_done', 0))} / {_fmt_bytes(state['bytes_total'])})"
-            self._job_update(self._bulk_job_id, title=f"Bulk download  {done} / {total}" if total else "Bulk download",
-                             progress=(done / total) if total else -1.0, detail=detail)
-        else:
-            if state.get("cancelled"):
-                status = "cancelled"
-            elif state.get("failed") and not state.get("succeeded"):
-                status = "failed"
-            else:
-                status = "done"
-            self._job_update(
-                self._bulk_job_id, title=f"Bulk download  {done} / {total}", status=status,
-                progress=(done / total) if total else 1.0,
-                detail=f"{state.get('succeeded', 0)} downloaded, {state.get('skipped', 0)} skipped, {state.get('failed', 0)} failed",
-            )
+            return False
+        return True
 
     @Slot("QVariantList", int, bool, bool)
     def startBulkSubcategories(self, subcategories, max_items: int = 0, download_model: bool = True, download_images: bool = True):
@@ -712,28 +705,66 @@ class AppBridge(QObject):
             {"category": g.get("category", ""), "subcategory": g.get("subcategory", ""), "feed_url": g.get("feed_url", "")}
             for g in subcategories if g.get("feed_url")
         ]
-        self._launch_bulk(groups, max_items, download_model, download_images)
+        if not groups:
+            self.toast.emit("warning", "Nothing selected to download")
+            return
+        if not self._check_queue_options(download_model, download_images):
+            return
+
+        def _done(n: int):
+            msg = f"Added {n} articles to the download queue" if n else "Nothing new to add to the queue"
+            if n and self._queue_user_paused:
+                msg += " (the queue is paused)"
+            self._runOnMain.emit(lambda: self.toast.emit("success" if n else "info", msg))
+
+        self.queue.add_feeds(groups, max_items, download_model, download_images,
+                             start=not self._queue_user_paused, done_cb=_done)
+        plural = "s" if len(groups) != 1 else ""
+        self.toast.emit("info", f"Reading {len(groups)} feed{plural} into the download queue...")
 
     @Slot(str, str, "QVariantList", bool, bool)
     def startBulkArticles(self, category: str, subcategory: str, articles, download_model: bool = True, download_images: bool = True):
         """articles: [{title, link}, ...] picked from one feed."""
+        if not self._check_queue_options(download_model, download_images):
+            return
         items = [{"title": a.get("title", ""), "link": a.get("link", "")} for a in articles if a.get("link")]
-        self._launch_bulk([{"category": category, "subcategory": subcategory, "articles": items}], 0, download_model, download_images)
+        n = self.queue.add_articles(items, category, subcategory, download_model, download_images,
+                                    start=not self._queue_user_paused)
+        self.toast.emit("success" if n else "info",
+                        f"Added {n} articles to the download queue" if n else "Those articles are already queued")
 
     @Slot()
-    def cancelBulk(self):
-        if self.service.is_bulk_running():
-            self.service.cancel_bulk()
-            self._bulk_state = dict(self._bulk_state, current="Cancelling after the current article...")
-            self.bulkStateChanged.emit()
+    def queuePause(self):
+        self._queue_user_paused = True
+        self.queue.pause()
 
     @Slot()
-    def dismissBulk(self):
-        if not self._bulk_state.get("running"):
-            self._bulk_state = {}
-            self.bulkStateChanged.emit()
+    def queueResume(self):
+        self._queue_user_paused = False
+        self.queue.resume()
 
-    # --- Storage location / cache / library import (file dialogs run on the GUI thread) ---
+    @Slot(int)
+    def queueRetry(self, item_id: int):
+        self._queue_user_paused = False
+        self.queue.retry(item_id)
+
+    @Slot()
+    def queueRetryFailed(self):
+        self._queue_user_paused = False
+        n = self.queue.retry_failed()
+        self.toast.emit("info" if n else "warning", f"Retrying {n} failed downloads" if n else "No failed downloads")
+
+    @Slot(int)
+    def queueRemove(self, item_id: int):
+        self.queue.remove(item_id)
+
+    @Slot(int)
+    def queueMoveToTop(self, item_id: int):
+        self.queue.move_to_top(item_id)
+
+    @Slot()
+    def queueClearFinished(self):
+        self.queue.clear_finished()
 
     def _set_busy(self, busy: bool, message: str = ""):
         self._maintenance_busy = busy

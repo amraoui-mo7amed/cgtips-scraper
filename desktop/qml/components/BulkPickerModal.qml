@@ -137,7 +137,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Text { text: "Bulk download categories"; color: Theme.textPrimary; font.pixelSize: 14; font.bold: true }
                     Text {
-                        text: "Tick categories or single sub-categories; they download one after another."
+                        text: "Tick categories or single sub-categories; their articles are added to the download queue."
                         color: Theme.textMuted; font.pixelSize: 10
                         Layout.fillWidth: true; wrapMode: Text.Wrap
                     }
@@ -273,10 +273,10 @@ Rectangle {
                     Layout.fillWidth: true; elide: Text.ElideRight
                 }
                 ActionButton {
-                    text: root.pickedCount > 0 ? "Download " + root.pickedCount + " sub-categories" : "Pick sub-categories"
+                    text: root.pickedCount > 0 ? "Queue " + root.pickedCount + " sub-categories" : "Pick sub-categories"
                     icon: Icons.download
                     primary: true
-                    enabled: root.pickedCount > 0 && !Bridge.isBulkRunning
+                    enabled: root.pickedCount > 0
                     onClicked: root.start()
                 }
             }

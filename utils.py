@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Optional, Callable
@@ -177,7 +178,27 @@ def download_from_locker(page, locker_url, dest_path, progress_cb: Optional[Call
         return None
 
 
-def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
+class DownloadPaused(Exception):
+    """Raised when a model download is paused. The partial file is kept so it can resume."""
+
+    def __init__(self, msg: str = "Paused"):
+        super().__init__(msg)
+        self.gdrive_url = ""
+        self.folder = ""
+
+
+def _parse_total(r, offset: int) -> int:
+    """Full file size from a 200 or 206 response (0 when unknown)."""
+    if r.status_code == 206:
+        m = re.search(r"/(\d+)\s*$", r.headers.get("Content-Range", ""))
+        if m:
+            return int(m.group(1))
+        return offset + int(r.headers.get("Content-Length", 0) or 0)
+    return int(r.headers.get("Content-Length", 0) or 0)
+
+
+def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None,
+                  cancel_event: Optional[threading.Event] = None):
     s = cloudscraper.create_scraper()
     s.headers.update({"User-Agent": FEED_UA})
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -185,16 +206,25 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
     dest_path = Path(dest_path)
     dest_path.mkdir(parents=True, exist_ok=True)
 
+    # A paused download leaves a hidden ".<name>.part"; ask only for the missing bytes.
+    parts = sorted(dest_path.glob(".*.part"))
+    offset = parts[0].stat().st_size if parts else 0
+    range_hdr = {"Range": f"bytes={offset}-"} if offset else {}
+
     r = s.get(url, allow_redirects=False, timeout=30)
     r.raise_for_status()
 
-    if r.status_code == 303:
-        r = s.get(r.headers["Location"], timeout=30)
+    if r.status_code in (301, 302, 303, 307):
+        r = s.get(r.headers["Location"], headers=range_hdr, stream=True, timeout=60)
         r.raise_for_status()
+        if r.status_code == 206 and "text/html" in r.headers.get("Content-Type", ""):
+            # A partial HTML interstitial is useless; fetch it whole.
+            r = s.get(r.url, stream=True, timeout=60)
+            r.raise_for_status()
 
     ct = r.headers.get("Content-Type", "")
 
-    if "text/html" in ct and int(r.headers.get("Content-Length", 0)) < 10000:
+    if "text/html" in ct and int(r.headers.get("Content-Length", 0) or 0) < 10000:
         if "Virus scan warning" in r.text:
             soup = bs(r.content, "html.parser")
             form = soup.find("form")
@@ -202,10 +232,12 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
                 return None
             action = form.get("action")
             data = {inp.get("name"): inp.get("value", "") for inp in form.find_all("input") if inp.get("name")}
-            r = s.get(action, params=data, stream=True, timeout=60)
+            r = s.get(action, params=data, headers=range_hdr, stream=True, timeout=60)
             r.raise_for_status()
 
-        if b"Quota exceeded" in r.content or b"Too many users" in r.content:
+        if "text/html" in r.headers.get("Content-Type", "") and (
+            b"Quota exceeded" in r.content or b"Too many users" in r.content
+        ):
             logger.warning("Direct GDrive download hit quota limit for %s", file_id)
             return None
 
@@ -223,16 +255,25 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
 
     name = re.sub(r'[<>:"/\\|?*]', "_", name).strip(" .") or f"{file_id}.zip"
     path = dest_path / name
-    total = int(r.headers.get("Content-Length", 0))
-    downloaded = 0
 
     # Write to a hidden temp file and only rename once complete, so an interrupted
     # download (disk full, network drop) never shows up as a finished model.
     part = dest_path / f".{name}.part"
+    resuming = r.status_code == 206 and part.exists() and part.stat().st_size == offset
+    for stale in parts:
+        if stale != part or not resuming:
+            stale.unlink(missing_ok=True)
+    downloaded = offset if resuming else 0
+    total = _parse_total(r, offset) if resuming else int(r.headers.get("Content-Length", 0) or 0)
+    if resuming:
+        logger.info("Resuming %s at %d bytes", name, offset)
+
     try:
-        with open(part, "wb") as f:
-            with tqdm(total=total, unit='B', unit_scale=True, desc=name[:35], leave=False) as pbar:
-                for chunk in r.iter_content(chunk_size=16384):
+        with open(part, "ab" if resuming else "wb") as f:
+            with tqdm(total=total, initial=downloaded, unit='B', unit_scale=True, desc=name[:35], leave=False) as pbar:
+                for chunk in r.iter_content(chunk_size=65536):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise DownloadPaused()
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
@@ -242,6 +283,9 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
         if total and downloaded < total:
             raise IOError(f"Download incomplete: {downloaded} of {total} bytes")
         os.replace(part, path)
+    except DownloadPaused:
+        r.close()
+        raise  # keep the .part for resuming
     except BaseException:
         part.unlink(missing_ok=True)
         raise
@@ -281,7 +325,8 @@ def _download_pw(page, file_id, dest_path):
     return None
 
 
-def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Callable] = None):
+def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Callable] = None,
+                          cancel_event: Optional[threading.Event] = None):
     m = re.search(r"/file/d/([^/]+)", gdrive_url)
     if not m:
         return None
@@ -290,7 +335,7 @@ def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Cal
     dest_path.mkdir(parents=True, exist_ok=True)
 
     # 1. Direct requests download (fastest)
-    result = _download_req(file_id, dest_path, progress_cb=progress_cb)
+    result = _download_req(file_id, dest_path, progress_cb=progress_cb, cancel_event=cancel_event)
     if result:
         return result
 

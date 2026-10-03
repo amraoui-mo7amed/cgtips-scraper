@@ -72,8 +72,9 @@ ApplicationWindow {
                     switch (window.activeTab) {
                         case 0: return "Categories & Feeds";
                         case 1: return "Direct URL Resolver";
-                        case 2: return "Downloads Library";
-                        case 3: return "Settings & Integration";
+                        case 2: return "Download Queue";
+                        case 3: return "Downloads Library";
+                        case 4: return "Settings & Integration";
                         default: return "CGTips 3D";
                     }
                 }
@@ -81,8 +82,9 @@ ApplicationWindow {
                     switch (window.activeTab) {
                         case 0: return "Browse category hierarchy and live RSS article feeds";
                         case 1: return "Bypass download lockers and fetch 3D model archives";
-                        case 2: return "Manage and download locally saved 3D models";
-                        case 3: return "Storage location, cache backup and local statistics";
+                        case 2: return "Pause, resume and retry queued model downloads";
+                        case 3: return "Manage and download locally saved 3D models";
+                        case 4: return "Storage location, cache backup and local statistics";
                         default: return "";
                     }
                 }
@@ -113,6 +115,10 @@ ApplicationWindow {
                     id: resolverView
                 }
 
+                QueueView {
+                    id: queueView
+                }
+
                 LibraryView {
                     id: libraryView
                     onOpenGallery: function(images, title) {
@@ -129,6 +135,7 @@ ApplicationWindow {
             BulkProgressBar {
                 Layout.fillWidth: true
                 Layout.preferredHeight: implicitHeight
+                onOpenQueueRequested: window.activeTab = 2
             }
         }
     }

@@ -59,4 +59,8 @@ Item {
     readonly property string boxArchive: "\uf187"
     readonly property string stop: "\uf04d"
     readonly property string squareCheck: "\uf14a"
+    readonly property string pause: "\uf04c"
+    readonly property string play: "\uf04b"
+    readonly property string arrowUp: "\uf062"
+    readonly property string listOl: "\uf0cb"
 }

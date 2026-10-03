@@ -34,7 +34,7 @@ from config import (
     USER_AGENT,
     HEADLESS,
 )
-from engine import bulk_download, load_categories, resolve_and_download_single_article
+from engine import load_categories, resolve_and_download_single_article
 from utils import get_feed
 from .library import library_manager, format_bytes
 from gdrive_api import check_gdrive_status
@@ -47,8 +47,6 @@ class ScraperService:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
-        self._bulk_cancel = threading.Event()
-        self._bulk_lock = threading.Lock()
 
     def search(self, query: str, page: int = 1) -> List[Dict[str, Any]]:
         """Directly searches CGTips for SketchUp 3D models."""
@@ -310,39 +308,6 @@ class ScraperService:
         )
         return bool(result.get("success") and result.get("model_file"))
 
-    # --- Bulk download ---
-
-    def is_bulk_running(self) -> bool:
-        return self._bulk_lock.locked()
-
-    def cancel_bulk(self) -> None:
-        self._bulk_cancel.set()
-
-    def bulk_download(
-        self,
-        groups: List[Dict[str, Any]],
-        download_model: bool = True,
-        download_images: bool = True,
-        max_items: int = 0,
-        state_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
-        log_cb: Optional[Callable[[str], None]] = None,
-    ) -> Dict[str, Any]:
-        """Bulk-downloads articles / whole sub-categories (see engine.bulk_download)."""
-        if not self._bulk_lock.acquire(blocking=False):
-            raise RuntimeError("A bulk download is already running")
-        try:
-            self._bulk_cancel.clear()
-            return bulk_download(
-                groups,
-                download_model=download_model,
-                download_imgs=download_images,
-                max_items=max_items,
-                state_cb=state_cb,
-                log_cb=log_cb,
-                cancel_event=self._bulk_cancel,
-            )
-        finally:
-            self._bulk_lock.release()
 
     # --- Storage location ---
 

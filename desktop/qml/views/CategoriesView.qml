@@ -298,28 +298,25 @@ Item {
                 text: "Download selected (" + root.selectionCount + ")"
                 icon: Icons.download
                 primary: true
-                enabled: root.selectionCount > 0 && !Bridge.isBulkRunning
+                enabled: root.selectionCount > 0
                 onClicked: root.downloadSelected()
             }
             ActionButton {
                 text: "Whole sub-category"
                 icon: Icons.layerGroup
                 primary: true
-                enabled: !Bridge.isBulkRunning
                 onClicked: root.downloadSubcategory()
             }
             ActionButton {
                 text: "Whole category"
                 icon: Icons.cubes
                 primary: true
-                enabled: !Bridge.isBulkRunning
                 onClicked: root.downloadWholeCategory()
             }
             ActionButton {
                 text: "Several categories..."
                 icon: Icons.squareCheck
                 primary: true
-                enabled: !Bridge.isBulkRunning
                 onClicked: root.openBulkPickerRequested()
             }
             ActionButton {

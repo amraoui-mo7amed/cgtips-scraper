@@ -24,6 +24,7 @@ from utils import (
     download_from_locker,
     resolve_gdrive_from_locker,
     _download_from_gdrive,
+    DownloadPaused,
 )
 
 logger = logging.getLogger("engine")
@@ -191,6 +192,7 @@ def resolve_and_download_single_article(
     progress_cb: Optional[Callable] = None,
     page=None,
     title_hint: Optional[str] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Dict[str, Any]:
     """
     Given any sketchup.cgtips.org article URL, resolves content locker, extracts GDrive link,
@@ -284,7 +286,13 @@ def resolve_and_download_single_article(
             if gdrive_url:
                 _log(f"Extracted Google Drive URL: {gdrive_url}")
                 _log("Downloading model archive...")
-                model_file = _download_from_gdrive(page, gdrive_url, model_folder, progress_cb=progress_cb)
+                try:
+                    model_file = _download_from_gdrive(page, gdrive_url, model_folder, progress_cb=progress_cb,
+                                                       cancel_event=cancel_event)
+                except DownloadPaused as paused:
+                    paused.gdrive_url, paused.folder = gdrive_url, str(article_folder)
+                    _log("Model download paused")
+                    raise
                 result["model_file"] = model_file
                 if model_file:
                     _log(f"Model saved: {Path(model_file).name} ({os.path.getsize(model_file)} bytes)")
@@ -297,6 +305,8 @@ def resolve_and_download_single_article(
         elif not download_model:
             result["success"] = True
 
+    except DownloadPaused:
+        raise
     except Exception as e:
         result["error"] = str(e)
         _log(f"Resolver error: {e}")
@@ -309,6 +319,23 @@ def resolve_and_download_single_article(
                 pass
 
     return result
+
+
+def download_model_only(
+    gdrive_url: str,
+    article_folder: Path,
+    page=None,
+    progress_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Fetches just the model of an article whose Drive link is already known (resume / retry)."""
+    model_folder = Path(article_folder) / "model"
+    model_folder.mkdir(parents=True, exist_ok=True)
+    try:
+        return _download_from_gdrive(page, gdrive_url, model_folder, progress_cb=progress_cb, cancel_event=cancel_event)
+    except DownloadPaused as paused:
+        paused.gdrive_url, paused.folder = gdrive_url, str(article_folder)
+        raise
 
 
 # ---------------------------------------------------------------------------
