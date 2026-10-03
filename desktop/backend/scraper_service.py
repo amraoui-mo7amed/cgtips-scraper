@@ -222,25 +222,7 @@ class ScraperService:
             if missing:
                 history.add_many(missing)
         for item in items:
-            raw_imgs = item.get("images", [])
-            imgs_file_urls = []
-            for rel_img in raw_imgs:
-                p = (config.FEEDS_DIR / rel_img).resolve()
-                if p.exists():
-                    imgs_file_urls.append(QUrl.fromLocalFile(str(p)).toString())
-
-            item["images_full"] = imgs_file_urls
-            item["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
-
-            # Local folder and model path
-            full_folder = (config.FEEDS_DIR / item["folder_path"]).resolve()
-            item["folder_full_path"] = str(full_folder)
-
-            if item.get("model_path"):
-                full_model = (config.FEEDS_DIR / item["model_path"]).resolve()
-                item["model_file_full"] = str(full_model)
-            else:
-                item["model_file_full"] = ""
+            self._add_display_paths(item)
 
         return {
             "total": len(items),
@@ -248,6 +230,48 @@ class ScraperService:
             "stats": data.get("stats", {}),
             "categories": data.get("categories", []),
         }
+
+    def library_item(self, folder: str) -> Optional[Dict[str, Any]]:
+        """The library entry for one article folder (absolute path), or None if it isn't in the library."""
+        article_dir = Path(folder)
+        try:
+            rel = article_dir.resolve().relative_to(Path(config.FEEDS_DIR).resolve())
+        except ValueError:
+            return None
+        if not article_dir.is_dir() or len(rel.parts) < 2:
+            return None
+        cat = rel.parts[0]
+        sub = rel.parts[1] if len(rel.parts) >= 3 else "Direct"
+        item = library_manager._scan_article(article_dir, cat, sub)
+        item.pop("_image_bytes", None)
+        if not (item["has_model"] or item["images_count"]):
+            return None
+        if item["has_model"] and not history.has(item.get("article_url") or "", item["title"]):
+            history.add(item.get("article_url") or "", item["title"], cat, sub)
+        self._add_display_paths(item)
+        return item
+
+    def _add_display_paths(self, item: Dict[str, Any]) -> None:
+        """Adds file:// image URLs and absolute folder/model paths for QML."""
+        raw_imgs = item.get("images", [])
+        imgs_file_urls = []
+        for rel_img in raw_imgs:
+            p = (config.FEEDS_DIR / rel_img).resolve()
+            if p.exists():
+                imgs_file_urls.append(QUrl.fromLocalFile(str(p)).toString())
+
+        item["images_full"] = imgs_file_urls
+        item["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
+
+        # Local folder and model path
+        full_folder = (config.FEEDS_DIR / item["folder_path"]).resolve()
+        item["folder_full_path"] = str(full_folder)
+
+        if item.get("model_path"):
+            full_model = (config.FEEDS_DIR / item["model_path"]).resolve()
+            item["model_file_full"] = str(full_model)
+        else:
+            item["model_file_full"] = ""
 
     def delete_model(self, folder_path: str) -> bool:
         """Deletes a local model directory from the filesystem."""

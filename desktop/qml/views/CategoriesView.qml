@@ -9,6 +9,7 @@ Item {
     id: root
 
     signal openCategoryModalRequested()
+    signal openBulkPickerRequested()
     signal resolveRequested(string link)
 
     property string selectedCategoryName: ""
@@ -313,6 +314,13 @@ Item {
                 primary: true
                 enabled: !Bridge.isBulkRunning
                 onClicked: root.downloadWholeCategory()
+            }
+            ActionButton {
+                text: "Several categories..."
+                icon: Icons.squareCheck
+                primary: true
+                enabled: !Bridge.isBulkRunning
+                onClicked: root.openBulkPickerRequested()
             }
             ActionButton {
                 text: "Models"

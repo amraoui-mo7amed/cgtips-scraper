@@ -3,6 +3,7 @@ PySide6 QObject Bridge connecting Qt Quick (QML) directly to the in-process scra
 No external REST API server required.
 """
 
+import logging
 import os
 import subprocess
 import sys
@@ -26,6 +27,8 @@ from PySide6.QtWidgets import QFileDialog
 import config
 import history
 from .library import format_bytes as _fmt_bytes
+
+logger = logging.getLogger("app_bridge")
 
 
 def _title_key(title: str) -> str:
@@ -141,6 +144,8 @@ class AppBridge(QObject):
 
         self._library_items: List[Dict[str, Any]] = []
         self._downloaded_index: Dict[str, str] = {}  # article url / title key -> library folder
+        self._library_query = ("", "all")  # last search / category the library view asked for
+        self._last_completed_seq = 0
         self._library_loading = False
         self._library_total = 0
 
@@ -452,7 +457,10 @@ class AppBridge(QObject):
             self.isResolvingChanged.emit()
             self.resolveCompleted.emit(True, "")
             self.toast.emit("success", "3D Model resolved and downloaded!")
-            self.loadLibrary()
+            if isinstance(res, dict) and res.get("folder"):
+                self._add_to_library(res["folder"])
+            else:
+                self.loadLibrary()
             self.refreshStatus()
 
         def _on_error(exc):
@@ -468,6 +476,7 @@ class AppBridge(QObject):
     @Slot(str, str)
     def loadLibrary(self, search: str = "", category: str = "all"):
         """Scans local media library and prepares file:// preview paths."""
+        self._library_query = (search or "", category or "all")
         self._library_loading = True
         self.libraryLoadingChanged.emit()
 
@@ -495,6 +504,33 @@ class AppBridge(QObject):
             self.toast.emit("error", f"Library load failed: {str(exc)}")
 
         self.thread_pool.start(Worker(_task, on_success=_on_success, on_error=_on_error))
+
+    def _add_to_library(self, folder: str):
+        """Shows a just-downloaded article in the library without rescanning everything."""
+        search, category = self._library_query
+        if search or category != "all":
+            self.loadLibrary(search, category)  # filtered view: let the scan decide if it belongs
+            return
+
+        def _on_success(item):
+            if not item:
+                return
+            items = [i for i in self._library_items if i.get("folder_path") != item["folder_path"]]
+            self._library_items = [item] + items
+            self._library_total = len(self._library_items)
+            if item.get("has_model"):
+                if item.get("article_url"):
+                    self._downloaded_index[item["article_url"].rstrip("/")] = item["folder_path"]
+                self._downloaded_index[_title_key(item.get("title", ""))] = item["folder_path"]
+                if self._feed_items:
+                    self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
+                    self.feedItemsChanged.emit()
+            self.libraryItemsChanged.emit()
+            self.libraryTotalChanged.emit()
+            self.historyChanged.emit()
+
+        self.thread_pool.start(Worker(lambda: self.service.library_item(folder), on_success=_on_success,
+                                      on_error=lambda exc: logger.warning("Library update failed: %s", exc)))
 
     @Slot(str)
     def deleteLibraryModel(self, folder_path: str):
@@ -612,6 +648,7 @@ class AppBridge(QObject):
                             "skipped": 0, "failed": 0, "current": "Starting...", "cancelled": False, "failures": []}
         self.bulkStateChanged.emit()
         self._bulk_job_id = self._job_add("bulk", "Bulk download", "Reading feeds...")
+        self._last_completed_seq = 0
 
         def _on_state(state: Dict[str, Any]):
             self._runOnMain.emit(lambda: self._apply_bulk_state(state))
@@ -628,7 +665,7 @@ class AppBridge(QObject):
                    f"{state.get('succeeded', 0)} downloaded, {state.get('skipped', 0)} skipped, "
                    f"{state.get('failed', 0)} failed")
             self.toast.emit("warning" if state.get("failed") or state.get("cancelled") else "success", msg)
-            self.loadLibrary()
+            self.loadLibrary(*self._library_query)
             self.refreshStatus()
 
         def _on_error(exc):
@@ -642,6 +679,10 @@ class AppBridge(QObject):
     def _apply_bulk_state(self, state: Dict[str, Any]):
         self._bulk_state = state
         self.bulkStateChanged.emit()
+        done_item = state.get("last_completed") or {}
+        if done_item.get("seq", 0) > self._last_completed_seq:
+            self._last_completed_seq = done_item["seq"]
+            self._add_to_library(done_item["folder"])
         if not self._bulk_job_id:
             return
         total, done = state.get("total", 0), state.get("done", 0)

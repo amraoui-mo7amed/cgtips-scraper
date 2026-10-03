@@ -238,6 +238,7 @@ def resolve_and_download_single_article(
         result["title"] = title
         safe_title = sanitize(title)[:80].rstrip(" .")
         article_folder = dest_dir / safe_title
+        result["folder"] = str(article_folder)
         article_folder.mkdir(parents=True, exist_ok=True)
         _log(f"Article title: '{title}'")
         write_meta(article_folder, article_url=article_url, title=title)
@@ -489,6 +490,9 @@ def bulk_download(
 
             if ok:
                 state["succeeded"] += 1
+                if res.get("folder"):
+                    # Lets the UI add this article to the library as soon as it lands.
+                    state["last_completed"] = {"folder": res["folder"], "seq": state["succeeded"]}
             else:
                 state["failed"] += 1
                 state["failures"].append({"title": label, "link": item["link"], "error": res.get("error") or "Download failed"})

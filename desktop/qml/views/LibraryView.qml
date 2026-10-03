@@ -174,10 +174,12 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            // Rescans keep the current cards on screen; the spinner only fills an empty view.
             BusyIndicator {
                 anchors.centerIn: parent
-                running: Bridge.libraryLoading || Bridge.maintenanceBusy
-                visible: Bridge.libraryLoading || Bridge.maintenanceBusy
+                z: 5
+                running: visible
+                visible: (Bridge.libraryLoading && Bridge.libraryItems.length === 0) || Bridge.maintenanceBusy
             }
 
             // Empty State
@@ -212,7 +214,7 @@ Item {
             GridView {
                 id: libGrid
                 anchors.fill: parent
-                visible: !Bridge.libraryLoading && Bridge.libraryItems.length > 0
+                visible: Bridge.libraryItems.length > 0
                 clip: true
                 cellWidth: Math.floor(libGrid.width / 3)
                 cellHeight: 310

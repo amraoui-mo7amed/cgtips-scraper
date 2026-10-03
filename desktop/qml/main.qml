@@ -100,6 +100,9 @@ ApplicationWindow {
                     onOpenCategoryModalRequested: function() {
                         categoryModal.open()
                     }
+                    onOpenBulkPickerRequested: function() {
+                        bulkPicker.open()
+                    }
                     onResolveRequested: function(link) {
                         resolverView.setUrl(link)
                         window.activeTab = 1
@@ -136,6 +139,13 @@ ApplicationWindow {
     }
 
     // Global Category Picker Modal
+    BulkPickerModal {
+        id: bulkPicker
+        limitValue: categoriesView.limitValue
+        wantModels: categoriesView.wantModels
+        wantImages: categoriesView.wantImages
+    }
+
     CategoryModal {
         id: categoryModal
         selectedCategory: categoriesView.selectedCategoryName
