@@ -64,4 +64,9 @@ Item {
     readonly property string cloudUpload: "\uf0ee"
     readonly property string lock: "\uf023"
     readonly property string key: "\uf084"
+    readonly property string pause: "\uf04c"
+    readonly property string listOl: "\uf0cb"
+    readonly property string squareCheck: "\uf14a"
+    readonly property string fileImport: "\uf56f"
+    readonly property string arrowUp: "\uf062"
 }

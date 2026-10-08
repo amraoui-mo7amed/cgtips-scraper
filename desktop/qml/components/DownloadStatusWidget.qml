@@ -8,6 +8,7 @@ import "."
 // Header button showing running downloads / imports, with a popup listing every job.
 Rectangle {
     id: root
+    signal openQueueRequested()
     readonly property var jobs: Bridge.downloadJobs || []
     readonly property int activeCount: Bridge.activeJobCount
     // newest running job if any, otherwise the newest job
@@ -119,6 +120,14 @@ Rectangle {
                     font.pixelSize: 13
                     font.bold: true
                     Layout.fillWidth: true
+                }
+                ActionButton {
+                    implicitHeight: 26
+                    text: "Open Queue"
+                    onClicked: {
+                        popup.close();
+                        root.openQueueRequested();
+                    }
                 }
                 ActionButton {
                     visible: root.jobs.length > root.activeCount
