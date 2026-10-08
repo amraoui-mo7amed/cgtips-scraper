@@ -38,7 +38,15 @@ from config import (
 from engine import load_categories, resolve_and_download_single_article
 from utils import get_feed
 from .library import library_manager, format_bytes
-from gdrive_api import check_gdrive_status
+from gdrive_api import (
+    check_gdrive_status,
+    import_credentials_file,
+    import_credentials_content,
+    authenticate_interactive,
+    test_connection,
+    disconnect_gdrive,
+)
+from desktop.backend.settings_manager import settings_manager
 from desktop.backend.image_provider import image_provider_instance
 
 logger = logging.getLogger("scraper_service")
@@ -479,6 +487,32 @@ class ScraperService:
                 cleared.append("token.pickle")
 
         return cleared
+
+    # --- Google Drive Methods ---
+
+    def get_gdrive_status(self) -> Dict[str, Any]:
+        return check_gdrive_status()
+
+    def import_credentials_file(self, file_path: str) -> Dict[str, Any]:
+        return import_credentials_file(file_path)
+
+    def import_credentials_content(self, content: str) -> Dict[str, Any]:
+        return import_credentials_content(content)
+
+    def authenticate_gdrive(self) -> Dict[str, Any]:
+        return authenticate_interactive()
+
+    def test_gdrive_connection(self) -> Dict[str, Any]:
+        return test_connection()
+
+    def disconnect_gdrive(self, delete_credentials: bool = False) -> Dict[str, Any]:
+        return disconnect_gdrive(delete_credentials=delete_credentials)
+
+    def get_prefer_gdrive_api(self) -> bool:
+        return settings_manager.get_prefer_gdrive_api()
+
+    def set_prefer_gdrive_api(self, prefer: bool):
+        settings_manager.set_prefer_gdrive_api(prefer)
 
 
 # Singleton service instance

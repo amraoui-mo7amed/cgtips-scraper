@@ -179,6 +179,15 @@ class AppBridge(QObject):
     historyChanged = Signal()
     _runOnMain = Signal(object)
 
+    # Google Drive signals
+    gdriveStatusChanged = Signal()
+    isAuthenticatingGDriveChanged = Signal()
+    isTestingGDriveChanged = Signal()
+    gdriveAuthFinished = Signal(bool, str)
+    gdriveImportFinished = Signal(bool, str)
+    gdriveTestFinished = Signal(bool, str)
+    preferGDriveApiChanged = Signal()
+
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
         self.thread_pool = QThreadPool.globalInstance()
@@ -186,6 +195,8 @@ class AppBridge(QObject):
 
         self._is_connected = True
         self._status_data: Dict[str, Any] = {}
+        self._is_authenticating_gdrive = False
+        self._is_testing_gdrive = False
 
         self._search_results: List[Dict[str, Any]] = []
         self._is_searching = False
@@ -499,6 +510,23 @@ class AppBridge(QObject):
     def uploadLogs(self) -> List[str]:
         return self._upload_logs
 
+    # Google Drive Properties
+    @Property("QVariant", notify=gdriveStatusChanged)
+    def gdriveStatus(self) -> Dict[str, Any]:
+        return self.service.get_gdrive_status()
+
+    @Property(bool, notify=isAuthenticatingGDriveChanged)
+    def isAuthenticatingGDrive(self) -> bool:
+        return self._is_authenticating_gdrive
+
+    @Property(bool, notify=isTestingGDriveChanged)
+    def isTestingGDrive(self) -> bool:
+        return self._is_testing_gdrive
+
+    @Property(bool, notify=preferGDriveApiChanged)
+    def preferGDriveApi(self) -> bool:
+        return self.service.get_prefer_gdrive_api()
+
     # --- Slots & Methods ---
 
     # Settings & Destination Disks Slots
@@ -551,6 +579,148 @@ class AppBridge(QObject):
         settings_manager.clear_copy_destinations()
         self.copyDestinationsChanged.emit()
         self.toast.emit("info", "Cleared all destination disks")
+
+    # Google Drive Slots
+    @Slot(bool)
+    def setPreferGDriveApi(self, prefer: bool):
+        self.service.set_prefer_gdrive_api(prefer)
+        self.preferGDriveApiChanged.emit()
+
+    @Slot()
+    def chooseCredentialsFile(self):
+        """Native file dialog to pick credentials.json."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Select Google Drive credentials.json",
+            str(Path.home()),
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if file_path:
+            self.importCredentialsFile(file_path)
+
+    @Slot(str)
+    def importCredentialsFile(self, file_path: str):
+        """Imports credentials.json from a file path."""
+        def _task():
+            return self.service.import_credentials_file(file_path)
+
+        def _on_success(res):
+            success = res.get("success", False)
+            msg = res.get("message", "")
+            self.gdriveStatusChanged.emit()
+            self.gdriveImportFinished.emit(success, msg)
+            if success:
+                self.toast.emit("success", msg)
+            else:
+                self.toast.emit("error", msg)
+
+        def _on_error(exc):
+            err = f"Failed to import credentials: {exc}"
+            self.gdriveImportFinished.emit(False, err)
+            self.toast.emit("error", err)
+
+        worker = Worker(_task, on_success=_on_success, on_error=_on_error)
+        self.thread_pool.start(worker)
+
+    @Slot(str)
+    def importCredentialsText(self, content: str):
+        """Imports credentials.json from raw JSON text."""
+        def _task():
+            return self.service.import_credentials_content(content)
+
+        def _on_success(res):
+            success = res.get("success", False)
+            msg = res.get("message", "")
+            self.gdriveStatusChanged.emit()
+            self.gdriveImportFinished.emit(success, msg)
+            if success:
+                self.toast.emit("success", msg)
+            else:
+                self.toast.emit("error", msg)
+
+        def _on_error(exc):
+            err = f"Failed to import credentials text: {exc}"
+            self.gdriveImportFinished.emit(False, err)
+            self.toast.emit("error", err)
+
+        worker = Worker(_task, on_success=_on_success, on_error=_on_error)
+        self.thread_pool.start(worker)
+
+    @Slot()
+    def authenticateGDrive(self):
+        """Starts Google OAuth 2.0 authorization in background and launches browser."""
+        if self._is_authenticating_gdrive:
+            return
+
+        self._is_authenticating_gdrive = True
+        self.isAuthenticatingGDriveChanged.emit()
+
+        def _task():
+            return self.service.authenticate_gdrive()
+
+        def _on_success(res):
+            self._is_authenticating_gdrive = False
+            self.isAuthenticatingGDriveChanged.emit()
+            success = res.get("success", False)
+            msg = res.get("message", "")
+            self.gdriveStatusChanged.emit()
+            self.gdriveAuthFinished.emit(success, msg)
+            if success:
+                self.toast.emit("success", msg)
+            else:
+                self.toast.emit("error", msg)
+
+        def _on_error(exc):
+            self._is_authenticating_gdrive = False
+            self.isAuthenticatingGDriveChanged.emit()
+            err = f"Authentication failed: {exc}"
+            self.gdriveStatusChanged.emit()
+            self.gdriveAuthFinished.emit(False, err)
+            self.toast.emit("error", err)
+
+        worker = Worker(_task, on_success=_on_success, on_error=_on_error)
+        self.thread_pool.start(worker)
+
+    @Slot()
+    def testGDriveConnection(self):
+        """Tests Google Drive API access and retrieves account info."""
+        if self._is_testing_gdrive:
+            return
+
+        self._is_testing_gdrive = True
+        self.isTestingGDriveChanged.emit()
+
+        def _task():
+            return self.service.test_gdrive_connection()
+
+        def _on_success(res):
+            self._is_testing_gdrive = False
+            self.isTestingGDriveChanged.emit()
+            success = res.get("success", False)
+            msg = res.get("message", "")
+            self.gdriveStatusChanged.emit()
+            self.gdriveTestFinished.emit(success, msg)
+            if success:
+                self.toast.emit("success", msg)
+            else:
+                self.toast.emit("error", msg)
+
+        def _on_error(exc):
+            self._is_testing_gdrive = False
+            self.isTestingGDriveChanged.emit()
+            err = f"Connection test error: {exc}"
+            self.gdriveTestFinished.emit(False, err)
+            self.toast.emit("error", err)
+
+        worker = Worker(_task, on_success=_on_success, on_error=_on_error)
+        self.thread_pool.start(worker)
+
+    @Slot(bool)
+    def disconnectGDrive(self, delete_credentials: bool = False):
+        """Disconnects Google Drive, removes token, and optionally deletes credentials.json."""
+        res = self.service.disconnect_gdrive(delete_credentials=delete_credentials)
+        self.gdriveStatusChanged.emit()
+        self.toast.emit("info", res.get("message", "Google Drive disconnected"))
 
     @Slot()
     def refreshStatus(self):

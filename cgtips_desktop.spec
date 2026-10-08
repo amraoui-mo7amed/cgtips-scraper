@@ -108,8 +108,8 @@ if sys.platform == 'darwin':
         icon=None,
         bundle_identifier='org.cgtips.desktop',
         info_plist={
-            'CFBundleShortVersionString': '1.5.4',
-            'CFBundleVersion': '1.5.4',
+            'CFBundleShortVersionString': '1.5.5',
+            'CFBundleVersion': '1.5.5',
             'NSHighResolutionCapable': 'True',
             'LSMinimumSystemVersion': '11.0',
         },

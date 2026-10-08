@@ -344,31 +344,54 @@ def _download_from_gdrive(
     dest_path = Path(dest_path)
     dest_path.mkdir(parents=True, exist_ok=True)
 
-    # 1. Direct requests download (fastest)
+    prefer_api = False
+    try:
+        from desktop.backend.settings_manager import settings_manager
+        prefer_api = settings_manager.get_prefer_gdrive_api()
+    except Exception:
+        pass
+
+    # Optional: Prefer Drive API if requested and credentials are present
+    if prefer_api:
+        try:
+            from gdrive_api import check_gdrive_status, copy_and_download
+            status = check_gdrive_status()
+            if status.get("credentials_present") and status.get("authenticated"):
+                if log_cb:
+                    log_cb("Preferred: Using Google Drive API for download...")
+                res = copy_and_download(file_id, dest_path, log_cb=log_cb, progress_cb=progress_cb, cancel_event=cancel_event)
+                if res:
+                    return res
+        except Exception as e:
+            logger.debug("Prefer Drive API attempt failed: %s", e)
+
+    # 1. Direct requests download (fastest HTTP request)
     result = _download_req(file_id, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
     if result:
         return result
 
     # 2. GDrive API quota bypass
     try:
-        from config import CREDENTIALS_FILE
-        if Path(CREDENTIALS_FILE).exists():
+        from gdrive_api import check_gdrive_status, copy_and_download
+        status = check_gdrive_status()
+        if status.get("credentials_present"):
             if log_cb:
-                log_cb("Attempting Google Drive API quota bypass...")
-            from gdrive_api import copy_and_download
+                log_cb("Direct download failed or quota limited. Attempting Google Drive API bypass...")
             logger.info("Direct download failed/quota limited, attempting Drive API bypass for %s", file_id)
-            result = copy_and_download(file_id, dest_path)
+            result = copy_and_download(file_id, dest_path, log_cb=log_cb, progress_cb=progress_cb, cancel_event=cancel_event)
             if result:
                 return result
         else:
             if log_cb:
-                log_cb("Google Drive API bypass unavailable (credentials.json missing)")
+                log_cb("Google Drive API quota bypass unavailable (credentials.json missing in Settings)")
     except Exception as e:
         logger.debug("Drive API fallback bypassed: %s", e)
 
     # 3. Playwright browser download fallback
     if page:
         logger.info("Attempting browser download fallback for %s", file_id)
+        if log_cb:
+            log_cb("Attempting browser download fallback...")
         result = _download_pw(page, file_id, dest_path)
         if result:
             return result

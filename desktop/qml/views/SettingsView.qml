@@ -547,6 +547,602 @@ Item {
                 }
             }
 
+            // Google Drive API & Quota Bypass Card
+            Rectangle {
+                id: gdriveCard
+                Layout.fillWidth: true
+                height: gdriveCol.implicitHeight + 40
+                radius: Theme.radiusLg
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+
+                readonly property var status: Bridge.gdriveStatus || {}
+                readonly property bool hasCreds: !!(status && status.credentials_present)
+                readonly property bool hasToken: !!(status && status.authenticated)
+                property string feedbackMessage: ""
+                property bool feedbackSuccess: true
+                property bool pasteMode: false
+                property bool showHelp: false
+
+                Connections {
+                    target: Bridge
+                    function onGdriveAuthFinished(success, message) {
+                        gdriveCard.feedbackSuccess = success
+                        gdriveCard.feedbackMessage = message
+                    }
+                    function onGdriveImportFinished(success, message) {
+                        gdriveCard.feedbackSuccess = success
+                        gdriveCard.feedbackMessage = message
+                    }
+                    function onGdriveTestFinished(success, message) {
+                        gdriveCard.feedbackSuccess = success
+                        gdriveCard.feedbackMessage = message
+                    }
+                }
+
+                ColumnLayout {
+                    id: gdriveCol
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 16
+
+                    // Card Header
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Rectangle {
+                            width: 40
+                            height: 40
+                            radius: Theme.radiusMd
+                            color: gdriveCard.hasToken
+                                ? Qt.rgba(Theme.success.r, Theme.success.g, Theme.success.b, 0.15)
+                                : (gdriveCard.hasCreds
+                                    ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.15)
+                                    : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15))
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: Icons.cloudUpload
+                                size: 18
+                                iconColor: gdriveCard.hasToken
+                                    ? Theme.success
+                                    : (gdriveCard.hasCreds ? Theme.warning : Theme.primaryLight)
+                            }
+                        }
+
+                        ColumnLayout {
+                            spacing: 2
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Google Drive API & Quota Bypass"
+                                color: Theme.textPrimary
+                                font.pixelSize: 15
+                                font.bold: true
+                            }
+                            Text {
+                                text: "Import credentials.json to bypass Google Drive 'Quota exceeded' limits automatically"
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                            }
+                        }
+
+                        // Status Badge
+                        Rectangle {
+                            radius: Theme.radiusSm
+                            height: 28
+                            Layout.preferredWidth: statusBadgeRow.implicitWidth + 16
+                            color: gdriveCard.hasToken
+                                ? Qt.rgba(Theme.success.r, Theme.success.g, Theme.success.b, 0.15)
+                                : (gdriveCard.hasCreds
+                                    ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.15)
+                                    : Qt.rgba(Theme.textMuted.r, Theme.textMuted.g, Theme.textMuted.b, 0.15))
+                            border.color: gdriveCard.hasToken
+                                ? Theme.success
+                                : (gdriveCard.hasCreds ? Theme.warning : Theme.border)
+
+                            RowLayout {
+                                id: statusBadgeRow
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: gdriveCard.hasToken
+                                        ? Icons.checkCircle
+                                        : (gdriveCard.hasCreds ? Icons.exclamationTriangle : Icons.infoCircle)
+                                    size: 11
+                                    iconColor: gdriveCard.hasToken
+                                        ? Theme.success
+                                        : (gdriveCard.hasCreds ? Theme.warning : Theme.textMuted)
+                                }
+                                Text {
+                                    text: {
+                                        if (gdriveCard.hasToken) {
+                                            var email = (gdriveCard.status && gdriveCard.status.user_email) || ""
+                                            return email ? "Connected • " + email : "Connected & Ready"
+                                        }
+                                        if (gdriveCard.hasCreds) return "Credentials Ready • Sign In Required"
+                                        return "credentials.json Missing"
+                                    }
+                                    color: gdriveCard.hasToken
+                                        ? Theme.success
+                                        : (gdriveCard.hasCreds ? Theme.warning : Theme.textMuted)
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Theme.border
+                    }
+
+                    // Credentials File Picker Section
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Text {
+                            text: "Google OAuth Credentials (credentials.json)"
+                            color: Theme.textSecondary
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 38
+                                radius: Theme.radiusSm
+                                color: Theme.surfaceElevated
+                                border.color: Theme.border
+
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    text: {
+                                        if (gdriveCard.hasCreds) {
+                                            var p = (gdriveCard.status && gdriveCard.status.credentials_path) || "credentials.json"
+                                            var cid = (gdriveCard.status && gdriveCard.status.client_id) || ""
+                                            if (cid && cid.length > 20) {
+                                                return p + " (" + cid.substring(0, 16) + "...)"
+                                            }
+                                            return p
+                                        }
+                                        return "No credentials.json imported yet"
+                                    }
+                                    color: gdriveCard.hasCreds ? Theme.primaryLight : Theme.textMuted
+                                    font.pixelSize: 12
+                                    font.bold: gdriveCard.hasCreds
+                                    elide: Text.ElideMiddle
+                                }
+                            }
+
+                            // Import credentials.json button
+                            Rectangle {
+                                width: 180
+                                height: 38
+                                radius: Theme.radiusSm
+                                color: Theme.primary
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    FaIcon {
+                                        icon: Icons.fileImport
+                                        size: 12
+                                        iconColor: "white"
+                                    }
+                                    Text {
+                                        text: "Import credentials.json"
+                                        color: "white"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        gdriveCard.feedbackMessage = ""
+                                        Bridge.chooseCredentialsFile()
+                                    }
+                                }
+                            }
+
+                            // Paste JSON toggle button
+                            Rectangle {
+                                width: 100
+                                height: 38
+                                radius: Theme.radiusSm
+                                color: gdriveCard.pasteMode ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Theme.surfaceElevated
+                                border.color: gdriveCard.pasteMode ? Theme.primary : Theme.border
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    FaIcon {
+                                        icon: Icons.copy
+                                        size: 11
+                                        iconColor: Theme.primaryLight
+                                    }
+                                    Text {
+                                        text: gdriveCard.pasteMode ? "Hide Paste" : "Paste JSON"
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: gdriveCard.pasteMode = !gdriveCard.pasteMode
+                                }
+                            }
+                        }
+                    }
+
+                    // Paste JSON Text Area (collapsible)
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: gdriveCard.pasteMode
+                        spacing: 8
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 120
+                            radius: Theme.radiusSm
+                            color: Theme.surfaceElevated
+                            border.color: Theme.border
+
+                            ScrollView {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                TextArea {
+                                    id: jsonTextInput
+                                    placeholderText: "Paste contents of credentials.json here (must include 'installed' or 'web' client id)..."
+                                    placeholderTextColor: Theme.textMuted
+                                    color: Theme.textPrimary
+                                    font.family: "Courier"
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WrapAnywhere
+                                    selectByMouse: true
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 8
+                            ActionButton {
+                                text: "Save Pasted Credentials"
+                                icon: Icons.check
+                                primary: true
+                                enabled: jsonTextInput.text.trim().length > 0
+                                onClicked: {
+                                    Bridge.importCredentialsText(jsonTextInput.text)
+                                    gdriveCard.pasteMode = false
+                                }
+                            }
+                            ActionButton {
+                                text: "Cancel"
+                                icon: Icons.times
+                                onClicked: gdriveCard.pasteMode = false
+                            }
+                        }
+                    }
+
+                    // Actions Row: Sign In, Test Connection, Disconnect
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        visible: gdriveCard.hasCreds
+
+                        // Sign In with Google
+                        Rectangle {
+                            Layout.preferredWidth: 170
+                            height: 38
+                            radius: Theme.radiusSm
+                            color: Bridge.isAuthenticatingGDrive ? Theme.surfaceElevated : Theme.primary
+                            opacity: Bridge.isAuthenticatingGDrive ? 0.7 : 1.0
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 8
+                                FaIcon {
+                                    icon: Bridge.isAuthenticatingGDrive ? Icons.sync : Icons.cloudUpload
+                                    size: 13
+                                    iconColor: "white"
+                                    RotationAnimator on rotation {
+                                        running: Bridge.isAuthenticatingGDrive
+                                        loops: Animation.Infinite
+                                        from: 0
+                                        to: 360
+                                        duration: 1000
+                                    }
+                                }
+                                Text {
+                                    text: Bridge.isAuthenticatingGDrive
+                                        ? "Waiting for Auth..."
+                                        : (gdriveCard.hasToken ? "Re-authenticate" : "Sign In with Google")
+                                    color: "white"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !Bridge.isAuthenticatingGDrive
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    gdriveCard.feedbackMessage = ""
+                                    Bridge.authenticateGDrive()
+                                }
+                            }
+                        }
+
+                        // Test Connection
+                        Rectangle {
+                            Layout.preferredWidth: 140
+                            height: 38
+                            radius: Theme.radiusSm
+                            color: Theme.surfaceElevated
+                            border.color: Theme.border
+                            opacity: !gdriveCard.hasToken || Bridge.isTestingGDrive ? 0.5 : 1.0
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: Bridge.isTestingGDrive ? Icons.sync : Icons.bolt
+                                    size: 12
+                                    iconColor: Theme.primaryLight
+                                    RotationAnimator on rotation {
+                                        running: Bridge.isTestingGDrive
+                                        loops: Animation.Infinite
+                                        from: 0
+                                        to: 360
+                                        duration: 1000
+                                    }
+                                }
+                                Text {
+                                    text: Bridge.isTestingGDrive ? "Testing..." : "Test Drive API"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: gdriveCard.hasToken && !Bridge.isTestingGDrive
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    gdriveCard.feedbackMessage = ""
+                                    Bridge.testGDriveConnection()
+                                }
+                            }
+                        }
+
+                        // Disconnect Token
+                        Rectangle {
+                            Layout.preferredWidth: 110
+                            height: 38
+                            radius: Theme.radiusSm
+                            color: Theme.surfaceElevated
+                            border.color: Theme.border
+                            visible: gdriveCard.hasToken
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: Icons.times
+                                    size: 11
+                                    iconColor: Theme.danger
+                                }
+                                Text {
+                                    text: "Sign Out"
+                                    color: Theme.danger
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Bridge.disconnectGDrive(false)
+                            }
+                        }
+
+                        // Delete Credentials
+                        Rectangle {
+                            Layout.preferredWidth: 130
+                            height: 38
+                            radius: Theme.radiusSm
+                            color: Theme.surfaceElevated
+                            border.color: Theme.border
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: Icons.trash
+                                    size: 11
+                                    iconColor: Theme.textMuted
+                                }
+                                Text {
+                                    text: "Remove Creds"
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Bridge.disconnectGDrive(true)
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    // Prefer Drive API Toggle Checkbox
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 52
+                        radius: Theme.radiusSm
+                        color: Theme.surfaceElevated
+                        border.color: Theme.border
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 12
+
+                            CheckBox {
+                                id: preferApiCheck
+                                checked: Bridge.preferGDriveApi
+                                onToggled: Bridge.setPreferGDriveApi(checked)
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: "Prefer Google Drive API for all downloads"
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                                Text {
+                                    text: "When unchecked (default), uses fast direct HTTP download first and uses Drive API only as an automatic quota bypass."
+                                    color: Theme.textMuted
+                                    font.pixelSize: 10
+                                }
+                            }
+                        }
+                    }
+
+                    // Feedback Message Banner
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 36
+                        radius: Theme.radiusSm
+                        visible: !!gdriveCard.feedbackMessage
+                        color: gdriveCard.feedbackSuccess
+                            ? Qt.rgba(Theme.success.r, Theme.success.g, Theme.success.b, 0.15)
+                            : Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.15)
+                        border.color: gdriveCard.feedbackSuccess ? Theme.success : Theme.danger
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
+                            FaIcon {
+                                icon: gdriveCard.feedbackSuccess ? Icons.checkCircle : Icons.timesCircle
+                                size: 12
+                                iconColor: gdriveCard.feedbackSuccess ? Theme.success : Theme.danger
+                            }
+                            Text {
+                                text: gdriveCard.feedbackMessage
+                                color: gdriveCard.feedbackSuccess ? Theme.success : Theme.danger
+                                font.pixelSize: 11
+                                font.bold: true
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            FaIcon {
+                                icon: Icons.times
+                                size: 10
+                                iconColor: Theme.textMuted
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: gdriveCard.feedbackMessage = ""
+                                }
+                            }
+                        }
+                    }
+
+                    // How to obtain credentials.json accordion
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: Theme.radiusSm
+                        color: Theme.surfaceElevated
+                        border.color: Theme.border
+                        height: gdriveCard.showHelp ? helpCol.implicitHeight + 20 : 36
+                        clip: true
+
+                        Behavior on height { NumberAnimation { duration: 150 } }
+
+                        ColumnLayout {
+                            id: helpCol
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            Item {
+                                Layout.fillWidth: true
+                                height: 20
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    spacing: 8
+                                    FaIcon {
+                                        icon: Icons.infoCircle
+                                        size: 12
+                                        iconColor: Theme.primaryLight
+                                    }
+                                    Text {
+                                        text: "How to get credentials.json from Google Cloud Console"
+                                        color: Theme.primaryLight
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        Layout.fillWidth: true
+                                    }
+                                    FaIcon {
+                                        icon: gdriveCard.showHelp ? Icons.chevronDown : Icons.chevronRight
+                                        size: 10
+                                        iconColor: Theme.textMuted
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: gdriveCard.showHelp = !gdriveCard.showHelp
+                                }
+                            }
+
+                            Text {
+                                visible: gdriveCard.showHelp
+                                Layout.fillWidth: true
+                                text: "1. Open Google Cloud Console (console.cloud.google.com) and create or select a project.\n" +
+                                      "2. Navigate to 'APIs & Services' > 'Library', search for 'Google Drive API' and click 'Enable'.\n" +
+                                      "3. Navigate to 'APIs & Services' > 'Credentials' > 'Create Credentials' > 'OAuth client ID'.\n" +
+                                      "4. Select Application type: 'Desktop app' (name it 'CGTips 3D') and click 'Create'.\n" +
+                                      "5. Click the Download JSON icon to get your credentials.json file.\n" +
+                                      "6. Click 'Import credentials.json' above, then click 'Sign In with Google' to authorize."
+                                color: Theme.textSecondary
+                                font.pixelSize: 10
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+                }
+            }
+
             // Loft Design Services API Configuration Card
             Rectangle {
                 id: apiCard

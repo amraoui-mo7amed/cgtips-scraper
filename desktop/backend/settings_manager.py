@@ -38,6 +38,9 @@ class SettingsManager:
                             "api_url": data.get("api_url", self.DEFAULT_API_URL).rstrip("/"),
                             "api_username": data.get("api_username", ""),
                             "api_password": data.get("api_password", ""),
+                            "prefer_gdrive_api": bool(data.get("prefer_gdrive_api", False)),
+                            "gdrive_user_email": str(data.get("gdrive_user_email", "")),
+                            "gdrive_user_name": str(data.get("gdrive_user_name", "")),
                         }
             except Exception as e:
                 logger.warning("Failed to load settings from %s: %s", self.settings_file, e)
@@ -47,6 +50,9 @@ class SettingsManager:
             "api_url": self.DEFAULT_API_URL,
             "api_username": "",
             "api_password": "",
+            "prefer_gdrive_api": False,
+            "gdrive_user_email": "",
+            "gdrive_user_name": "",
         }
 
     def _save(self):
@@ -156,6 +162,31 @@ class SettingsManager:
             self._data["api_password"] = str(password)
             self._save()
 
+    # --- Google Drive Settings ---
+
+    def get_prefer_gdrive_api(self) -> bool:
+        with self._lock:
+            return bool(self._data.get("prefer_gdrive_api", False))
+
+    def set_prefer_gdrive_api(self, prefer: bool):
+        with self._lock:
+            self._data["prefer_gdrive_api"] = bool(prefer)
+            self._save()
+
+    def get_gdrive_user_info(self) -> Dict[str, str]:
+        with self._lock:
+            return {
+                "email": self._data.get("gdrive_user_email", ""),
+                "name": self._data.get("gdrive_user_name", ""),
+            }
+
+    def set_gdrive_user_info(self, email: str, name: str):
+        with self._lock:
+            self._data["gdrive_user_email"] = str(email).strip()
+            self._data["gdrive_user_name"] = str(name).strip()
+            self._save()
+
 
 # Singleton instance
 settings_manager = SettingsManager()
+
