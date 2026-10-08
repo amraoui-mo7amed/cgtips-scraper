@@ -1123,6 +1123,12 @@ class AppBridge(QObject):
     def queueClearFinished(self):
         self.queue.clear_finished()
 
+    @Slot()
+    def queueClearAll(self):
+        """Cancels any active download and removes all items from the download queue."""
+        count = self.queue.clear_all()
+        self.toast.emit("info", f"Cleared {count} item(s) from the download queue")
+
     # --- Maintenance, Storage & Cache ---
 
     def _set_busy(self, busy: bool, message: str = ""):

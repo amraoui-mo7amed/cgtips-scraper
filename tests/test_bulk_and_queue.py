@@ -112,6 +112,12 @@ class TestBulkAndQueue(unittest.TestCase):
         queue.remove(last_id)
         self.assertEqual(len(queue.items()), 2)
 
+        # Test clear_all
+        cleared = queue.clear_all()
+        self.assertEqual(cleared, 2)
+        self.assertEqual(len(queue.items()), 0)
+        self.assertEqual(queue.stats()["total"], 0)
+
     def test_cache_export_import(self):
         # Create a mock categories.json file (must be a JSON array)
         feed_file = Path(config.CATEGORIES_FILE)

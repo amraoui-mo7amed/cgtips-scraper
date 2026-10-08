@@ -141,6 +141,12 @@ Item {
                         enabled: ((root.st.done || 0) + (root.st.skipped || 0)) > 0
                         onClicked: Bridge.queueClearFinished()
                     }
+                    ActionButton {
+                        text: "Clear all"
+                        icon: Icons.trash
+                        enabled: (root.st.total || 0) > 0
+                        onClicked: confirmClearModal.open()
+                    }
                     Item { width: 12; height: 1 }
                     Repeater {
                         model: [
@@ -267,6 +273,100 @@ Item {
                         text: ""
                         icon: Icons.times
                         onClicked: Bridge.queueRemove(row.it.id)
+                    }
+                }
+            }
+        }
+    }
+
+    // Confirm Clear All Queue Modal
+    Rectangle {
+        id: confirmClearModal
+        anchors.fill: parent
+        color: "#D9050811"
+        z: 999
+        visible: opacity > 0
+        opacity: 0
+
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+
+        function open() { opacity = 1 }
+        function close() { opacity = 0 }
+
+        MouseArea { anchors.fill: parent; onClicked: confirmClearModal.close() }
+
+        Rectangle {
+            width: Math.min(parent.width - 40, 460)
+            height: confirmCol.implicitHeight + 40
+            anchors.centerIn: parent
+            radius: Theme.radiusLg
+            color: Theme.surface
+            border.color: Theme.border
+            border.width: 1
+
+            MouseArea { anchors.fill: parent; onClicked: {} }
+
+            ColumnLayout {
+                id: confirmCol
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 16
+
+                RowLayout {
+                    spacing: 12
+                    Rectangle {
+                        width: 40
+                        height: 40
+                        radius: Theme.radiusMd
+                        color: Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.15)
+                        FaIcon {
+                            anchors.centerIn: parent
+                            icon: Icons.trash
+                            size: 18
+                            iconColor: Theme.danger
+                        }
+                    }
+                    ColumnLayout {
+                        spacing: 2
+                        Text {
+                            text: "Clear Download Queue?"
+                            color: Theme.textPrimary
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                        Text {
+                            text: "Cancel in-progress download and wipe all items"
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Are you sure you want to clear all " + (root.st.total || 0) + " items from the download queue? Active downloads will be stopped and all waiting items will be removed so you can queue other items."
+                    color: Theme.textSecondary
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Item { Layout.fillWidth: true }
+                    ActionButton {
+                        text: "Cancel"
+                        icon: Icons.times
+                        onClicked: confirmClearModal.close()
+                    }
+                    ActionButton {
+                        text: "Yes, Clear All"
+                        icon: Icons.trash
+                        primary: true
+                        onClicked: {
+                            confirmClearModal.close()
+                            Bridge.queueClearAll()
+                        }
                     }
                 }
             }

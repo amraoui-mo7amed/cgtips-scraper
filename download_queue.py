@@ -224,6 +224,17 @@ class DownloadQueue:
         self._changed()
         return removed
 
+    def clear_all(self) -> int:
+        """Cancels any in-progress download and wipes all items from the queue."""
+        self._cancel.set()
+        with self._lock:
+            count = len(self._items)
+            self._items.clear()
+            self.paused = False
+            self.listing = ""
+        self._changed()
+        return count
+
     # --- worker ------------------------------------------------------------
 
     def _next(self) -> Optional[Dict[str, Any]]:
@@ -274,6 +285,7 @@ class DownloadQueue:
             _close()
             with self._lock:
                 self._worker = None
+                self._cancel.clear()
             self._on_change()
 
     def _process(self, item: Dict[str, Any], get_page) -> bool:
