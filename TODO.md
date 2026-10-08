@@ -13,7 +13,7 @@
     **Ps:** 
     - let the user choose an exe file from the settings called `client agent` this file will be autocopied with the articles
     - Also the copy process must be for many destinations/disls at the same time
-    - the articles will be coppied to `data` folder
+    - the articles will be coppied to `storage` folder
 - [x] Upload articles:
     - by articles
     - by category 

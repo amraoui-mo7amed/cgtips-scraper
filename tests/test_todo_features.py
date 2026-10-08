@@ -193,15 +193,15 @@ class TestTodoFeatures(unittest.TestCase):
         self.assertEqual((dest_disk1 / "client_agent.exe").read_bytes(), b"MZ_DUMMY_CLIENT_AGENT_BINARY_EXE")
         self.assertEqual((dest_disk2 / "client_agent.exe").read_bytes(), b"MZ_DUMMY_CLIENT_AGENT_BINARY_EXE")
 
-        # Verify articles structure on both disks
-        art1_on_disk1 = dest_disk1 / "Architecture" / "Houses" / "101. Modern Villa"
-        art2_on_disk1 = dest_disk1 / "Architecture" / "Houses" / "102. Wooden Cabin"
+        # Verify articles structure on both disks (in storage folder)
+        art1_on_disk1 = dest_disk1 / "storage" / "Architecture" / "Houses" / "101. Modern Villa"
+        art2_on_disk1 = dest_disk1 / "storage" / "Architecture" / "Houses" / "102. Wooden Cabin"
         self.assertTrue((art1_on_disk1 / "model" / "villa.zip").exists())
         self.assertTrue((art1_on_disk1 / "image_1.jpg").exists())
         self.assertTrue((art2_on_disk1 / "image_1.jpg").exists())
 
-        art1_on_disk2 = dest_disk2 / "Architecture" / "Houses" / "101. Modern Villa"
-        art2_on_disk2 = dest_disk2 / "Architecture" / "Houses" / "102. Wooden Cabin"
+        art1_on_disk2 = dest_disk2 / "storage" / "Architecture" / "Houses" / "101. Modern Villa"
+        art2_on_disk2 = dest_disk2 / "storage" / "Architecture" / "Houses" / "102. Wooden Cabin"
         self.assertTrue((art1_on_disk2 / "model" / "villa.zip").exists())
         self.assertTrue((art1_on_disk2 / "image_1.jpg").exists())
         self.assertTrue((art2_on_disk2 / "image_1.jpg").exists())
@@ -223,7 +223,7 @@ class TestTodoFeatures(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["copied_articles"], 1)
         self.assertTrue((dest_disk / "client_agent.exe").exists())
-        self.assertTrue((dest_disk / "Architecture" / "Houses" / "101. Modern Villa" / "model" / "villa.zip").exists())
+        self.assertTrue((dest_disk / "storage" / "Architecture" / "Houses" / "101. Modern Villa" / "model" / "villa.zip").exists())
 
     def test_batch_download_missing_by_scopes(self):
         # Mock download function

@@ -124,9 +124,10 @@ class CopyManager:
                 "destinations": 0,
             }
 
-        _log(f"Targeting {len(valid_dests)} destination disk(s):")
+        _log(f"Targeting {len(valid_dests)} destination disk(s) (copying to 'storage' folder):")
         for vd in valid_dests:
-            _log(f"  • {vd}")
+            storage_path = vd if vd.name.lower() == "storage" else vd / "storage"
+            _log(f"  • {vd} -> {storage_path}")
 
         # 2. Gather articles by scope
         articles = lib.get_articles_by_scope(scope=scope, target=target)
@@ -207,7 +208,10 @@ class CopyManager:
                     break
 
                 rel_file = src_file.resolve().relative_to(base_feeds)
-                target_dest_files = [dest / rel_file for dest in valid_dests]
+                target_dest_files = [
+                    (dest if dest.name.lower() == "storage" else dest / "storage") / rel_file
+                    for dest in valid_dests
+                ]
 
                 try:
                     bytes_written = _copy_stream_to_destinations(
