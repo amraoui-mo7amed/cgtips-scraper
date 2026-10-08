@@ -803,12 +803,23 @@ class AppBridge(QObject):
             self.autoRetryEnabledChanged.emit()
 
     @Slot(str)
-    def copyToClipboard(self, text: str):
-        """Copies text to the system clipboard."""
+    @Slot(str, str)
+    def copyToClipboard(self, text: str, message: str = ""):
+        """Copies text to the system clipboard and notifies user."""
+        clean_text = str(text or "").strip()
+        if not clean_text:
+            return
         clipboard = QGuiApplication.clipboard()
         if clipboard:
-            clipboard.setText(text)
-            self.toast.emit("success", "Logs copied to clipboard")
+            clipboard.setText(clean_text)
+            if message:
+                self.toast.emit("success", message)
+            elif clean_text.startswith("http://") or clean_text.startswith("https://"):
+                self.toast.emit("success", "Link copied to clipboard!")
+            elif "\n" in clean_text or "---" in clean_text:
+                self.toast.emit("success", "Logs copied to clipboard!")
+            else:
+                self.toast.emit("success", "Copied to clipboard!")
 
     # --- Clear Download List ---
 
@@ -1211,14 +1222,3 @@ class AppBridge(QObject):
     @Slot(str)
     def openExternalUrl(self, url: str):
         self.openWeb(url)
-
-    @Slot(str)
-    def copyToClipboard(self, text: str):
-        """Copies text to system clipboard and shows a toast notification."""
-        clean_text = str(text or "").strip()
-        if not clean_text:
-            return
-        clipboard = QGuiApplication.clipboard()
-        if clipboard:
-            clipboard.setText(clean_text)
-            self.toast.emit("success", "Link copied to clipboard!")

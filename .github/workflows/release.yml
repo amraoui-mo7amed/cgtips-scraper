@@ -67,11 +67,25 @@ jobs:
         run: |
           pyinstaller --clean -y cgtips_desktop.spec
 
+      - name: Smoke test - launch packaged app on Windows
+        shell: pwsh
+        run: |
+          $env:QT_QUICK_BACKEND = "software"
+          $p = Start-Process -FilePath dist/CGTips-3D/CGTips-3D.exe -PassThru `
+                 -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          Start-Sleep -Seconds 15
+          Write-Host "--- stdout ---"; Get-Content out.txt -ErrorAction SilentlyContinue
+          Write-Host "--- stderr ---"; Get-Content err.txt -ErrorAction SilentlyContinue
+          if ($p.HasExited -and $p.ExitCode -ne 0) {
+            Write-Host "::error::App failed to start with exit code $($p.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+
       - name: Package Windows Binary
         shell: pwsh
         run: |
           Compress-Archive -Path dist/CGTips-3D -DestinationPath dist/CGTips-3D-Windows.zip -Force
-          Copy-Item dist/CGTips-3D/CGTips-3D.exe dist/CGTips-3D.exe -ErrorAction SilentlyContinue
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -79,7 +93,6 @@ jobs:
           name: windows-binaries
           path: |
             dist/CGTips-3D-Windows.zip
-            dist/CGTips-3D.exe
 
   publish-release:
     needs: [build-macos, build-windows]
@@ -110,4 +123,3 @@ jobs:
             release-assets/CGTips-3D-macOS.dmg
             release-assets/CGTips-3D-macOS.zip
             release-assets/CGTips-3D-Windows.zip
-            release-assets/CGTips-3D.exe

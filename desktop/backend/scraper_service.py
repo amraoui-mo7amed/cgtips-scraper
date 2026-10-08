@@ -4,13 +4,15 @@ Provides in-process, direct execution of the scraper engine without requiring
 a separate FastAPI server or REST API layer.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 from PySide6.QtCore import QUrl
