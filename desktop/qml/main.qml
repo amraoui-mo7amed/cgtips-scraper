@@ -15,7 +15,7 @@ ApplicationWindow {
     title: "CGTips 3D • Desktop Platform"
     color: Theme.background
 
-    property int activeTab: 1
+    property int activeTab: 0
 
     // Font Awesome Loaders
     FontLoader {
@@ -26,8 +26,6 @@ ApplicationWindow {
         id: faRegularLoader
         source: "../assets/fonts/fa-regular-400.ttf"
     }
-
-
 
     // Connect toast signal from Python bridge
     Connections {
@@ -70,9 +68,9 @@ ApplicationWindow {
                 Layout.fillHeight: false
                 title: {
                     switch (window.activeTab) {
-                        case 0: return "Explore 3D Models";
-                        case 1: return "Categories & Feeds";
-                        case 2: return "Direct URL Resolver";
+                        case 0: return "Categories & Feeds";
+                        case 1: return "Direct URL Resolver";
+                        case 2: return "Download Queue";
                         case 3: return "Downloads Library";
                         case 4: return "Settings & Integration";
                         default: return "CGTips 3D";
@@ -80,17 +78,20 @@ ApplicationWindow {
                 }
                 subtitle: {
                     switch (window.activeTab) {
-                        case 0: return "Search and discover free SketchUp 3D models from CGTips";
-                        case 1: return "Browse category hierarchy and live RSS article feeds";
-                        case 2: return "Bypass download lockers and fetch 3D model archives";
+                        case 0: return "Browse category hierarchy and live RSS article feeds";
+                        case 1: return "Bypass download lockers and fetch 3D model archives";
+                        case 2: return "Pause, resume and retry queued model downloads";
                         case 3: return "Manage and download locally saved 3D models";
                         case 4: return "Configure backend server address, API key, and view statistics";
                         default: return "";
                     }
                 }
                 onSearchRequested: function(query) {
-                    window.activeTab = 0
-                    Bridge.performSearch(query, 1)
+                    window.activeTab = 3
+                    libraryView.setSearch(query)
+                }
+                onOpenQueueRequested: function() {
+                    window.activeTab = 2
                 }
             }
 
@@ -101,25 +102,17 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 currentIndex: window.activeTab
 
-                ExploreView {
-                    id: exploreView
-                    onOpenGallery: function(images, title) {
-                        lightbox.open(images, title, 0)
-                    }
-                    onResolveRequested: function(link) {
-                        resolverView.setUrl(link)
-                        window.activeTab = 2
-                    }
-                }
-
                 CategoriesView {
                     id: categoriesView
                     onOpenCategoryModalRequested: function() {
                         categoryModal.open()
                     }
+                    onOpenBulkPickerRequested: function() {
+                        bulkPicker.open()
+                    }
                     onResolveRequested: function(link) {
                         resolverView.setUrl(link)
-                        window.activeTab = 2
+                        window.activeTab = 1
                     }
                     onOpenBatchDownloadRequested: function(scope, cat, sub, articleFolder, articleTitle) {
                         batchDownloadModal.open(scope, cat, sub, articleFolder, articleTitle)
@@ -134,6 +127,10 @@ ApplicationWindow {
 
                 ResolverView {
                     id: resolverView
+                }
+
+                QueueView {
+                    id: queueView
                 }
 
                 LibraryView {
@@ -159,6 +156,15 @@ ApplicationWindow {
                     id: settingsView
                 }
             }
+
+            // Bulk download progress (shown on every tab while a job exists)
+            BulkProgressBar {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                onOpenQueueRequested: function() {
+                    window.activeTab = 2
+                }
+            }
         }
     }
 
@@ -167,7 +173,15 @@ ApplicationWindow {
         id: lightbox
     }
 
-    // Global Category Picker Modal
+    // Global Category Picker Modal (Bulk Download)
+    BulkPickerModal {
+        id: bulkPicker
+        limitValue: categoriesView.limitValue
+        wantModels: categoriesView.wantModels
+        wantImages: categoriesView.wantImages
+    }
+
+    // Global Category Tree Modal (Single Category Selection)
     CategoryModal {
         id: categoryModal
         selectedCategory: categoriesView.selectedCategoryName
@@ -175,7 +189,7 @@ ApplicationWindow {
         selectedFeedUrl: categoriesView.selectedFeedUrl
         onSubcategorySelected: function(catTitle, subTitle, feedUrl) {
             categoriesView.selectSubcategory(catTitle, subTitle, feedUrl)
-            window.activeTab = 1
+            window.activeTab = 0
         }
     }
 

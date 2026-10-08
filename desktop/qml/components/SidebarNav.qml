@@ -76,9 +76,9 @@ Rectangle {
 
             Repeater {
                 model: [
-                    { name: "Explore & Search", icon: Icons.compass, index: 0 },
-                    { name: "Categories & Feeds", icon: Icons.layerGroup, index: 1 },
-                    { name: "Direct Resolver", icon: Icons.bolt, index: 2 },
+                    { name: "Categories & Feeds", icon: Icons.layerGroup, index: 0 },
+                    { name: "Direct Resolver", icon: Icons.bolt, index: 1 },
+                    { name: "Download Queue", icon: Icons.listOl, index: 2 },
                     { name: "Downloads Library", icon: Icons.cubes, index: 3 },
                     { name: "Settings & Status", icon: Icons.gear, index: 4 }
                 ]

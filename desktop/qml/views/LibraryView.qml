@@ -21,6 +21,10 @@ Item {
         Bridge.loadLibrary(libFilterInput.text.trim(), root.selectedCategory, root.isMissingOnly);
     }
 
+    function setSearch(query) {
+        libFilterInput.text = query;
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20

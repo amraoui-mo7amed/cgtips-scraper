@@ -20,6 +20,7 @@ Rectangle {
     property string title: "Explore"
     property string subtitle: "Discover 3D models"
     signal searchRequested(string query)
+    signal openQueueRequested()
 
     RowLayout {
         anchors.fill: parent
@@ -101,6 +102,12 @@ Rectangle {
                     }
                 }
             }
+        }
+
+        // Download / import status (click for the full list)
+        DownloadStatusWidget {
+            Layout.preferredWidth: implicitWidth
+            onOpenQueueRequested: root.openQueueRequested()
         }
 
         // Open Local Storage Button

@@ -7,6 +7,24 @@ import os
 import sys
 from pathlib import Path
 
+# The packaged app has no console on Windows, so sys.stdout / sys.stderr are None and anything
+# that writes to them (tqdm progress bars during model downloads, print, logging)
+# raises "'NoneType' object has no attribute 'write'". Send that output to devnull.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+# Some Windows Pythons (e.g. Microsoft Store) don't put PySide6's folder on the
+# DLL search path, so QML plugins like QtQuick.Controls fail to load.
+if sys.platform == "win32" and not getattr(sys, "frozen", False):
+    pyside6_dir = Path(sys.prefix) / "Lib" / "site-packages" / "PySide6"
+    if pyside6_dir.is_dir() and hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(str(pyside6_dir))
+        except OSError:
+            pass
+
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonInstance

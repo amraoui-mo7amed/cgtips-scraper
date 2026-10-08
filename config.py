@@ -1,13 +1,15 @@
+import json
 import socket
 import os
 import sys
 import shutil
 from pathlib import Path
+from typing import Optional
 from decouple import config
 
 # Ensure reliable Cloudflare Anycast IP resolution for CGTips domains
 # across regions where local DNS returns unreachable edge IPs (causing HTTP timeouts)
-_CGTIPS_HOSTS = ("sketchup.cgtips.org", "cgtips.org", "www.cgtips.org")
+_CGTIPS_HOSTS = ("sketchup.cgtips.org", "cgtips.org", "www.cgtips.org", "link.cgtips.org")
 _CGTIPS_FALLBACK_IP = "104.21.74.130"
 
 _ORIG_GETADDRINFO = socket.getaddrinfo
@@ -18,6 +20,11 @@ def _cgtips_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
 
 socket.getaddrinfo = _cgtips_getaddrinfo
+
+# Same pinning for the Playwright browser, which does its own DNS resolution
+CGTIPS_HOST_RESOLVER_RULES = "--host-resolver-rules=" + ", ".join(
+    f"MAP {h} {_CGTIPS_FALLBACK_IP}" for h in _CGTIPS_HOSTS
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -35,6 +42,8 @@ CHROME_PATH = config("CHROME_PATH", default="")
 
 # Data and Storage Paths
 if getattr(sys, "frozen", False):
+    # Packaged builds ship Chromium inside the playwright package ("0" = look there)
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
     _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
     if sys.platform == "darwin":
         _USER_DATA = Path.home() / "Library" / "Application Support" / "CGTips 3D"
@@ -66,8 +75,60 @@ else:
 DATA_DIR = Path(config("DATA_DIR", default=DEFAULT_DATA_DIR))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-FEEDS_DIR = Path(config("FEEDS_DIR", default=DEFAULT_FEEDS_DIR))
+IMAGE_CACHE_DIR = DATA_DIR / "cache" / "images"
+IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+SETTINGS_FILE = DATA_DIR / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _usable_dir(path) -> Optional[Path]:
+    if not path or not str(path).strip():
+        return None
+    try:
+        p = Path(path).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        probe = p / ".cgtips_write_test"
+        probe.write_text("ok")
+        probe.unlink()
+        return p.resolve()
+    except Exception:
+        return None
+
+
+FEEDS_DIR = (
+    _usable_dir(load_settings().get("feeds_dir") or "")
+    or _usable_dir(config("FEEDS_DIR", default=DEFAULT_FEEDS_DIR))
+    or _usable_dir(DEFAULT_FEEDS_DIR)
+    or Path(DEFAULT_FEEDS_DIR)
+)
 FEEDS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def set_feeds_dir(path) -> Path:
+    global FEEDS_DIR
+    p = _usable_dir(path)
+    if p is None:
+        raise ValueError(f"Directory is not writable: {path}")
+    settings = load_settings()
+    settings["feeds_dir"] = str(p)
+    save_settings(settings)
+    FEEDS_DIR = p
+    return p
 
 # Helper for locating data files in data/ or root directory
 def _resolve_data_file(filename: str) -> Path:

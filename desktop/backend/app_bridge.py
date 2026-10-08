@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -25,11 +26,40 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFileDialog
 
+import config
+import history
+from download_queue import DownloadQueue
+from .library import format_bytes as _fmt_bytes
 from .scraper_service import scraper_service, FEEDS_DIR
 from .settings_manager import settings_manager
 from .library import library_manager
 
 logger = logging.getLogger("app_bridge")
+
+
+def _title_key(title: str) -> str:
+    return history.title_key(title)
+
+
+def _build_downloaded_index(library_items: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Maps article URLs and title keys of library items that have their model to their folder."""
+    index: Dict[str, str] = {}
+    for it in library_items:
+        if not it.get("has_model"):
+            continue
+        if it.get("article_url"):
+            index[it["article_url"].rstrip("/")] = it["folder_path"]
+        index[_title_key(it.get("title", ""))] = it["folder_path"]
+    return index
+
+
+def _mark_downloaded(feed_items: List[Dict[str, Any]], index: Dict[str, str]) -> List[Dict[str, Any]]:
+    out = []
+    for e in feed_items:
+        folder = index.get((e.get("link") or "").rstrip("/")) or index.get(_title_key(e.get("title", "")))
+        downloaded = bool(folder) or history.has(e.get("link") or "", e.get("title") or "")
+        out.append(dict(e, downloaded=downloaded, local_folder=folder or ""))
+    return out
 
 
 class Worker(QRunnable):
@@ -139,6 +169,16 @@ class AppBridge(QObject):
     resolveCompleted = Signal(bool, str)
     resolverLogAdded = Signal(str)
 
+    # Queue, history & storage signals
+    feedsDirChanged = Signal()
+    queueChanged = Signal()
+    queueProgressChanged = Signal()
+    maintenanceChanged = Signal()
+    libraryImported = Signal()
+    downloadJobsChanged = Signal()
+    historyChanged = Signal()
+    _runOnMain = Signal(object)
+
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
         self.thread_pool = QThreadPool.globalInstance()
@@ -158,6 +198,8 @@ class AppBridge(QObject):
         self._feed_loading = False
 
         self._library_items: List[Dict[str, Any]] = []
+        self._downloaded_index: Dict[str, str] = {}
+        self._library_query = ("", "all")
         self._library_loading = False
         self._library_total = 0
         self._missing_models_count = 0
@@ -166,6 +208,27 @@ class AppBridge(QObject):
         self._resolver_result: Dict[str, Any] = {}
         self._is_resolving = False
         self._resolver_logs: List[str] = []
+
+        self._maintenance_busy = False
+        self._maintenance_message = ""
+
+        # Download / import jobs shown in the header's status widget (newest first)
+        self._jobs: List[Dict[str, Any]] = []
+        self._job_seq = 0
+
+        self._runOnMain.connect(self._execute_on_main)
+
+        # Download queue (bulk downloads and "download selected" go through it)
+        self._queue_items: List[Dict[str, Any]] = []
+        self._queue_stats: Dict[str, Any] = {}
+        self._queue_progress: Dict[str, Any] = {}
+        self._queue_job_id = 0
+        self._queue_user_paused = False
+        self.queue = DownloadQueue(
+            on_change=lambda: self._runOnMain.emit(self._refresh_queue),
+            on_progress=lambda i, d, t: self._runOnMain.emit(lambda: self._queue_bytes(i, d, t)),
+            on_item_done=lambda item: self._runOnMain.emit(lambda: self._add_to_library(item["folder"])),
+        )
 
         # Batch downloader state
         self._is_batch_downloading = False
@@ -205,15 +268,65 @@ class AppBridge(QObject):
         self._upload_logs: List[str] = []
         self._upload_stop_event = threading.Event()
 
+        self._refresh_queue()
+
+    @Slot(object)
+    def _execute_on_main(self, fn):
+        fn()
+
+    def _start(self, task: Callable, ok: Optional[Callable] = None, err: Optional[Callable] = None):
+        """Runs task in the thread pool; ok/err callbacks run on the GUI thread."""
+        self.thread_pool.start(Worker(
+            task,
+            on_success=(lambda r: self._runOnMain.emit(lambda: ok(r))) if ok else None,
+            on_error=(lambda e: self._runOnMain.emit(lambda: err(e))) if err else None,
+        ))
+
     # --- Properties ---
 
     @Property(bool, notify=isConnectedChanged)
     def isConnected(self) -> bool:
         return self._is_connected
 
-    @Property(str, constant=True)
+    @Property(str, notify=feedsDirChanged)
     def feedsDir(self) -> str:
-        return str(FEEDS_DIR)
+        return str(config.FEEDS_DIR)
+
+    @Property("QVariant", notify=queueChanged)
+    def queueItems(self) -> List[Dict[str, Any]]:
+        return self._queue_items
+
+    @Property("QVariant", notify=queueChanged)
+    def queueStats(self) -> Dict[str, Any]:
+        return self._queue_stats
+
+    @Property("QVariant", notify=queueProgressChanged)
+    def queueProgress(self) -> Dict[str, Any]:
+        return self._queue_progress
+
+    @Property(bool, notify=queueChanged)
+    def isBulkRunning(self) -> bool:
+        return bool(self._queue_stats.get("running"))
+
+    @Property("QVariant", notify=downloadJobsChanged)
+    def downloadJobs(self) -> List[Dict[str, Any]]:
+        return self._jobs
+
+    @Property(int, notify=historyChanged)
+    def historyCount(self) -> int:
+        return history.count()
+
+    @Property(int, notify=downloadJobsChanged)
+    def activeJobCount(self) -> int:
+        return sum(1 for j in self._jobs if j["status"] == "running")
+
+    @Property(bool, notify=maintenanceChanged)
+    def maintenanceBusy(self) -> bool:
+        return self._maintenance_busy
+
+    @Property(str, notify=maintenanceChanged)
+    def maintenanceMessage(self) -> str:
+        return self._maintenance_message
 
     @Property("QVariant", notify=statusDataChanged)
     def statusData(self) -> Dict[str, Any]:
@@ -524,7 +637,7 @@ class AppBridge(QObject):
             return self.service.get_feed_preview(feed_url, limit=15)
 
         def _on_success(items):
-            self._feed_items = items
+            self._feed_items = _mark_downloaded(items, self._downloaded_index)
             self._feed_loading = False
             self.feedItemsChanged.emit()
             self.feedLoadingChanged.emit()
@@ -551,10 +664,18 @@ class AppBridge(QObject):
         self.isResolvingChanged.emit()
         self.resolverLogsChanged.emit()
 
+        job_id = self._job_add("resolve", clean_url[:90], "Connecting...")
+
         def _log_cb(msg: str):
             self._resolver_logs.append(msg)
             self.resolverLogsChanged.emit()
             self.resolverLogAdded.emit(msg)
+
+        def _progress_cb(done: int, total: int, _name: str = ""):
+            if total > 0:
+                self._job_update(job_id, progress=done / total, detail=f"{_fmt_bytes(done)} / {_fmt_bytes(total)}")
+            else:
+                self._job_update(job_id, detail=_fmt_bytes(done))
 
         def _task():
             return self.service.resolve_article(
@@ -562,22 +683,27 @@ class AppBridge(QObject):
                 download_model=download_model,
                 download_images=download_images,
                 log_cb=_log_cb,
+                progress_cb=_progress_cb,
             )
 
         def _on_success(res):
+            self._job_update(job_id, status="done", progress=1.0, detail="Completed")
             self._resolver_result = res
             self._is_resolving = False
             self.resolverResultChanged.emit()
             self.isResolvingChanged.emit()
             self.resolveCompleted.emit(True, "")
             self.toast.emit("success", "3D Model resolved and downloaded!")
+            if res.get("folder"):
+                self._add_to_library(res["folder"])
             self.loadLibrary()
             self.refreshStatus()
 
         def _on_error(exc):
+            err_msg = str(exc)
+            self._job_update(job_id, status="failed", detail=err_msg[:160])
             self._is_resolving = False
             self.isResolvingChanged.emit()
-            err_msg = str(exc)
             self.resolveCompleted.emit(False, err_msg)
             self.toast.emit("error", f"Resolver error: {err_msg}")
 
@@ -589,6 +715,7 @@ class AppBridge(QObject):
     @Slot(str, str, bool)
     def loadLibrary(self, search: str = "", category: str = "all", missing_only: bool = False):
         """Scans local media library and prepares file:// preview paths."""
+        self._library_query = (search, category)
         self._library_loading = True
         self.libraryLoadingChanged.emit()
 
@@ -608,6 +735,11 @@ class AppBridge(QObject):
             self._subcategories_hierarchy = library_manager.scan_library().get("subcategories_hierarchy", {})
             self._library_loading = False
 
+            self._downloaded_index = _build_downloaded_index(items)
+            if self._feed_items:
+                self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
+                self.feedItemsChanged.emit()
+
             self.libraryItemsChanged.emit()
             self.libraryTotalChanged.emit()
             self.missingModelsCountChanged.emit()
@@ -621,6 +753,33 @@ class AppBridge(QObject):
             self.toast.emit("error", f"Library load failed: {str(exc)}")
 
         self.thread_pool.start(Worker(_task, on_success=_on_success, on_error=_on_error))
+
+    def _add_to_library(self, folder: str):
+        """Shows a just-downloaded article in the library without rescanning everything."""
+        search, category = self._library_query
+        if search or category != "all":
+            self.loadLibrary(search, category)
+            return
+
+        def _on_success(item):
+            if not item:
+                return
+            items = [i for i in self._library_items if i.get("folder_path") != item["folder_path"]]
+            self._library_items = [item] + items
+            self._library_total = len(self._library_items)
+            if item.get("has_model"):
+                if item.get("article_url"):
+                    self._downloaded_index[item["article_url"].rstrip("/")] = item["folder_path"]
+                self._downloaded_index[_title_key(item.get("title", ""))] = item["folder_path"]
+                if self._feed_items:
+                    self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
+                    self.feedItemsChanged.emit()
+            self.libraryItemsChanged.emit()
+            self.libraryTotalChanged.emit()
+            self.historyChanged.emit()
+
+        self.thread_pool.start(Worker(lambda: self.service.library_item(folder), on_success=_on_success,
+                                      on_error=lambda exc: logger.warning("Library update failed: %s", exc)))
 
     @Slot(str)
     def deleteLibraryModel(self, folder_path: str):
@@ -638,6 +797,323 @@ class AppBridge(QObject):
 
         def _on_error(exc):
             self.toast.emit("error", f"Delete error: {str(exc)}")
+
+        self.thread_pool.start(Worker(_task, on_success=_on_success, on_error=_on_error))
+
+    # --- Job Status Widget Support ---
+
+    def _job_add(self, kind: str, title: str, detail: str = "") -> int:
+        """Registers a job (GUI thread). progress -1 means indeterminate."""
+        self._job_seq += 1
+        self._jobs.insert(0, {
+            "id": self._job_seq,
+            "kind": kind,
+            "title": title,
+            "detail": detail,
+            "status": "running",
+            "progress": -1.0,
+            "started": time.strftime("%H:%M"),
+        })
+        del self._jobs[30:]
+        self.downloadJobsChanged.emit()
+        return self._job_seq
+
+    def _job_update(self, job_id: int, **fields):
+        """Updates a job; safe to call from worker threads."""
+        def _apply():
+            for i, j in enumerate(self._jobs):
+                if j["id"] == job_id:
+                    self._jobs[i] = dict(j, **fields)
+                    self.downloadJobsChanged.emit()
+                    return
+        from PySide6.QtCore import QThread
+        if QThread.currentThread() is self.thread():
+            _apply()
+        else:
+            self._runOnMain.emit(_apply)
+
+    @Slot()
+    def clearFinishedJobs(self):
+        self._jobs = [j for j in self._jobs if j["status"] == "running"]
+        self.downloadJobsChanged.emit()
+
+    # --- Download Queue & Bulk Feeds ---
+
+    def _refresh_queue(self):
+        self._queue_items = self.queue.items()
+        st = self.queue.stats()
+        self._queue_stats = st
+        if st["current_id"] != self._queue_progress.get("id"):
+            self._queue_progress = {"id": st["current_id"], "done": 0, "total": 0}
+            self.queueProgressChanged.emit()
+        self.queueChanged.emit()
+
+        busy = st["running"] or bool(st["listing"])
+        done = st["finished"]
+        title = f"Download queue  {done} / {st['total']}"
+        if busy:
+            if not self._queue_job_id or self._job_status(self._queue_job_id) != "running":
+                self._queue_job_id = self._job_add("queue", title, "Starting...")
+            self._job_update(
+                self._queue_job_id,
+                title=title,
+                status="running",
+                progress=(done / st["total"]) if st["total"] else -1.0,
+                detail=st["listing"] or st["current_title"] or "",
+            )
+        elif self._queue_job_id and self._job_status(self._queue_job_id) == "running":
+            if st["is_paused"] and st["active"]:
+                status, detail = "cancelled", f"Paused, {st['active']} waiting"
+            elif st["failed"] and not st["done"]:
+                status, detail = "failed", f"{st['failed']} failed"
+            else:
+                status, detail = "done", f"{st['done']} downloaded, {st['skipped']} skipped, {st['failed']} failed"
+            self._job_update(self._queue_job_id, title=title, status=status, progress=1.0, detail=detail)
+
+    def _job_status(self, job_id: int) -> str:
+        return next((j["status"] for j in self._jobs if j["id"] == job_id), "")
+
+    def _queue_bytes(self, item_id: int, done: int, total: int):
+        self._queue_progress = {"id": item_id, "done": done, "total": total}
+        self.queueProgressChanged.emit()
+        if self._queue_job_id:
+            title = self._queue_stats.get("current_title", "")
+            size = _fmt_bytes(done) + (f" / {_fmt_bytes(total)}" if total else "")
+            self._job_update(self._queue_job_id, detail=f"{title[:60]}  ({size})")
+
+    def _check_queue_options(self, download_model: bool, download_images: bool) -> bool:
+        if not (download_model or download_images):
+            self.toast.emit("warning", "Enable at least Models or Images")
+            return False
+        return True
+
+    @Slot("QVariantList", int, bool, bool)
+    def startBulkSubcategories(self, subcategories, max_items: int = 0, download_model: bool = True, download_images: bool = True):
+        groups = [
+            {"category": g.get("category", ""), "subcategory": g.get("subcategory", ""), "feed_url": g.get("feed_url", "")}
+            for g in subcategories if g.get("feed_url")
+        ]
+        if not groups:
+            self.toast.emit("warning", "Nothing selected to download")
+            return
+        if not self._check_queue_options(download_model, download_images):
+            return
+
+        def _done(n: int):
+            msg = f"Added {n} articles to the download queue" if n else "Nothing new to add to the queue"
+            if n and self._queue_user_paused:
+                msg += " (the queue is paused)"
+            self._runOnMain.emit(lambda: self.toast.emit("success" if n else "info", msg))
+
+        self.queue.add_feeds(groups, max_items, download_model, download_images,
+                             start=not self._queue_user_paused, done_cb=_done)
+        plural = "s" if len(groups) != 1 else ""
+        self.toast.emit("info", f"Reading {len(groups)} feed{plural} into the download queue...")
+
+    @Slot(str, str, "QVariantList", bool, bool)
+    def startBulkArticles(self, category: str, subcategory: str, articles, download_model: bool = True, download_images: bool = True):
+        if not self._check_queue_options(download_model, download_images):
+            return
+        items = [{"title": a.get("title", ""), "link": a.get("link", "")} for a in articles if a.get("link")]
+        n = self.queue.add_articles(items, category, subcategory, download_model, download_images,
+                                    start=not self._queue_user_paused)
+        self.toast.emit("success" if n else "info",
+                        f"Added {n} articles to the download queue" if n else "Those articles are already queued")
+
+    @Slot()
+    def queuePause(self):
+        self._queue_user_paused = True
+        self.queue.pause()
+
+    @Slot()
+    def queueResume(self):
+        self._queue_user_paused = False
+        self.queue.resume()
+
+    @Slot(int)
+    def queueRetry(self, item_id: int):
+        self._queue_user_paused = False
+        self.queue.retry(item_id)
+
+    @Slot()
+    def queueRetryFailed(self):
+        self._queue_user_paused = False
+        n = self.queue.retry_failed()
+        self.toast.emit("info" if n else "warning", f"Retrying {n} failed downloads" if n else "No failed downloads")
+
+    @Slot(int)
+    def queueRemove(self, item_id: int):
+        self.queue.remove(item_id)
+
+    @Slot(int)
+    def queueMoveToTop(self, item_id: int):
+        self.queue.move_to_top(item_id)
+
+    @Slot()
+    def queueClearFinished(self):
+        self.queue.clear_finished()
+
+    # --- Maintenance, Storage & Cache ---
+
+    def _set_busy(self, busy: bool, message: str = ""):
+        self._maintenance_busy = busy
+        self._maintenance_message = message
+        self.maintenanceChanged.emit()
+
+    def _run_maintenance(self, message: str, task: Callable, on_done: Callable[[Any], str]):
+        if self._maintenance_busy:
+            self.toast.emit("warning", "Another operation is still running")
+            return
+        self._set_busy(True, message)
+
+        def _ok(res):
+            self._set_busy(False)
+            self.toast.emit("success", on_done(res))
+
+        def _err(exc):
+            self._set_busy(False)
+            self.toast.emit("error", str(exc))
+
+        self._start(task, _ok, _err)
+
+    @Slot(bool)
+    def chooseStorageDir(self, move_existing: bool = False):
+        start = str(config.FEEDS_DIR)
+        chosen = QFileDialog.getExistingDirectory(None, "Choose storage directory", start)
+        if not chosen:
+            return
+
+        def _task():
+            return self.service.set_storage_dir(chosen, move_existing=move_existing)
+
+        def _done(res):
+            self.feedsDirChanged.emit()
+            self.loadLibrary()
+            self.refreshStatus()
+            extra = f" ({res['moved']} items moved" + (f", {res['conflicts']} conflicts left in place" if res["conflicts"] else "") + ")" if move_existing else ""
+            return f"Storage location set to {res['feeds_dir']}{extra}"
+
+        self._run_maintenance("Changing storage location...", _task, _done)
+
+    @Slot(bool)
+    def exportCache(self, include_images: bool = True):
+        name = f"cgtips-cache-{time.strftime('%Y%m%d')}.zip"
+        path, _ = QFileDialog.getSaveFileName(None, "Export cache", str(Path.home() / name), "Cache archive (*.zip)")
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+
+        self._run_maintenance(
+            "Exporting cache...",
+            lambda: self.service.export_cache(path, include_images=include_images),
+            lambda r: f"Cache exported: {len(r['json_files'])} data files, {r['images']} thumbnails",
+        )
+
+    @Slot()
+    def importCache(self):
+        path, _ = QFileDialog.getOpenFileName(None, "Import cache", str(Path.home()), "Cache archive (*.zip)")
+        if not path:
+            return
+
+        def _done(r):
+            self.loadCategories()
+            self.refreshStatus()
+            return f"Cache imported: {len(r['json_files'])} data files, {r['images_added']} new thumbnails"
+
+        self._run_maintenance("Importing cache...", lambda: self.service.import_cache(path), _done)
+
+    def _import_library(self, paths: List[str], move: bool):
+        if self._maintenance_busy:
+            self.toast.emit("warning", "Another operation is still running")
+            return
+        job_id = self._job_add("import", "Import into library", "Scanning folders...")
+
+        def _progress(idx: int, total: int):
+            self._job_update(job_id, progress=idx / total if total else -1.0, detail=f"{idx} / {total} items")
+
+        def _done(r):
+            self.loadLibrary()
+            self.refreshStatus()
+            self.libraryImported.emit()
+            msg = f"Imported {r['imported']} of {r['found']} items ({r['skipped']} already present"
+            msg += f", {r['failed']} failed: {'; '.join(r['errors'][:2])})" if r["failed"] else ")"
+            if r["found"] == 0 and r["notes"]:
+                msg = r["notes"][0]
+            failed_all = r["failed"] and not r["imported"]
+            self._job_update(job_id, status="failed" if failed_all else "done", progress=1.0, detail=msg)
+            return msg
+
+        def _task():
+            try:
+                return self.service.import_library(paths, move=move, progress_cb=_progress)
+            except Exception as e:
+                self._job_update(job_id, status="failed", detail=str(e)[:220])
+                raise
+
+        self._run_maintenance("Importing downloads into the library...", _task, _done)
+
+    @Slot()
+    def importHistory(self):
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Import download history", str(Path.home()),
+            "Download history or feeds file (*.json)",
+        )
+        if not path:
+            return
+
+        def _done(r):
+            self.historyChanged.emit()
+            self.loadLibrary()
+            return (f"Download history: {r['added']} new articles added ({r['downloaded']} of {r['found']} "
+                    f"in the file were downloaded). {r['total']} articles will be skipped.")
+
+        self._run_maintenance("Importing download history...", lambda: self.service.import_history(path), _done)
+
+    @Slot()
+    def exportHistory(self):
+        path, _ = QFileDialog.getSaveFileName(
+            None, "Export download history", str(Path.home() / "download_history.json"), "Download history (*.json)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        self._run_maintenance("Exporting download history...", lambda: self.service.export_history(path),
+                              lambda n: f"Download history exported: {n} articles")
+
+    @Slot(bool)
+    def importLibraryFolder(self, move: bool = False):
+        chosen = QFileDialog.getExistingDirectory(None, "Choose a folder with downloaded models", str(Path.home()))
+        if chosen:
+            self._import_library([chosen], move)
+
+    @Slot(bool)
+    def importLibraryFiles(self, move: bool = False):
+        files, _ = QFileDialog.getOpenFileNames(
+            None, "Choose model archives / images", str(Path.home()),
+            "Models & images (*.zip *.rar *.7z *.skp *.jpg *.jpeg *.png *.webp)",
+        )
+        if files:
+            self._import_library(files, move)
+
+    @Slot("QVariantList", str)
+    def exportBulkZip(self, rel_folder_paths, export_type: str = "both"):
+        """Exports multiple models to a single zip file."""
+        paths = [str(p) for p in rel_folder_paths if p]
+        if not paths:
+            self.toast.emit("warning", "No models selected for export")
+            return
+
+        def _task():
+            return library_manager.create_bulk_zip(paths, export_type)
+
+        def _on_success(zip_path):
+            self.toast.emit("success", f"Bulk zip created: {zip_path.name}")
+            self.openFolder(str(zip_path.parent))
+
+        def _on_error(exc):
+            self.toast.emit("error", f"Bulk export failed: {exc}")
 
         self.thread_pool.start(Worker(_task, on_success=_on_success, on_error=_on_error))
 

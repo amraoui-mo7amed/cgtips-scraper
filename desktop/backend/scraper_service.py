@@ -22,6 +22,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import config
+import cache_io
+import history
 from config import (
     BASE_DIR,
     FEEDS_DIR,
@@ -201,6 +204,26 @@ class ScraperService:
         res["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
         return res
 
+    def _add_display_paths(self, item: Dict[str, Any]) -> None:
+        raw_imgs = item.get("images", [])
+        imgs_file_urls = []
+        for rel_img in raw_imgs:
+            p = (config.FEEDS_DIR / rel_img).resolve()
+            if p.exists():
+                imgs_file_urls.append(QUrl.fromLocalFile(str(p)).toString())
+
+        item["images_full"] = imgs_file_urls
+        item["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
+
+        full_folder = (config.FEEDS_DIR / item["folder_path"]).resolve()
+        item["folder_full_path"] = str(full_folder)
+
+        if item.get("model_path"):
+            full_model = (config.FEEDS_DIR / item["model_path"]).resolve()
+            item["model_file_full"] = str(full_model)
+        else:
+            item["model_file_full"] = ""
+
     def get_library(
         self,
         search: Optional[str] = None,
@@ -217,25 +240,7 @@ class ScraperService:
 
         items = data.get("items", [])
         for item in items:
-            raw_imgs = item.get("images", [])
-            imgs_file_urls = []
-            for rel_img in raw_imgs:
-                p = (FEEDS_DIR / rel_img).resolve()
-                if p.exists():
-                    imgs_file_urls.append(QUrl.fromLocalFile(str(p)).toString())
-
-            item["images_full"] = imgs_file_urls
-            item["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
-
-            # Local folder and model path
-            full_folder = (FEEDS_DIR / item["folder_path"]).resolve()
-            item["folder_full_path"] = str(full_folder)
-
-            if item.get("model_path"):
-                full_model = (FEEDS_DIR / item["model_path"]).resolve()
-                item["model_file_full"] = str(full_model)
-            else:
-                item["model_file_full"] = ""
+            self._add_display_paths(item)
 
         return {
             "total": len(items),
@@ -243,6 +248,26 @@ class ScraperService:
             "stats": data.get("stats", {}),
             "categories": data.get("categories", []),
         }
+
+    def library_item(self, folder: str) -> Optional[Dict[str, Any]]:
+        """The library entry for one article folder (absolute path), or None if it isn't in the library."""
+        article_dir = Path(folder)
+        try:
+            rel = article_dir.resolve().relative_to(Path(config.FEEDS_DIR).resolve())
+        except ValueError:
+            return None
+        if not article_dir.is_dir() or len(rel.parts) < 2:
+            return None
+        cat = rel.parts[0]
+        sub = rel.parts[1] if len(rel.parts) >= 3 else "Direct"
+        item = library_manager._scan_article(article_dir, cat, sub)
+        item.pop("_image_bytes", None)
+        if not (item["has_model"] or item["images_count"]):
+            return None
+        if item["has_model"] and not history.has(item.get("article_url") or "", item["title"]):
+            history.add(item.get("article_url") or "", item["title"], cat, sub)
+        self._add_display_paths(item)
+        return item
 
     def delete_model(self, folder_path: str) -> bool:
         """Deletes a local model directory from the filesystem."""
@@ -365,6 +390,55 @@ class ScraperService:
     def clear_library(self, mode: str = "all", category: Optional[str] = None) -> int:
         """Clears library items based on mode."""
         return library_manager.clear_library(mode=mode, category=category)
+
+    def set_storage_dir(self, new_dir: str, move_existing: bool = False) -> Dict[str, Any]:
+        """Switches the library location, optionally moving existing downloads along."""
+        old = Path(config.FEEDS_DIR).resolve()
+        new = Path(new_dir).expanduser().resolve()
+        if new == old:
+            return {"feeds_dir": str(old), "moved": 0, "conflicts": 0}
+        if move_existing and (new.is_relative_to(old) or old.is_relative_to(new)):
+            raise ValueError("The new location cannot be inside the current one (or contain it)")
+
+        config.set_feeds_dir(new)  # validates writability and persists
+        moved = conflicts = 0
+        if move_existing and old.exists():
+            def _merge(src: Path, dst: Path):
+                nonlocal moved, conflicts
+                if not dst.exists():
+                    shutil.move(str(src), str(dst))
+                    moved += 1
+                elif src.is_dir() and dst.is_dir():
+                    for child in list(src.iterdir()):
+                        _merge(child, dst / child.name)
+                    try:
+                        src.rmdir()
+                    except OSError:
+                        pass
+                else:
+                    conflicts += 1
+
+            for child in list(old.iterdir()):
+                _merge(child, new / child.name)
+        return {"feeds_dir": str(new), "moved": moved, "conflicts": conflicts}
+
+    def export_cache(self, dest_zip: str, include_images: bool = True, progress_cb=None) -> Dict[str, Any]:
+        return cache_io.export_cache(dest_zip, include_images=include_images, progress_cb=progress_cb)
+
+    def import_cache(self, src_zip: str, progress_cb=None) -> Dict[str, Any]:
+        return cache_io.import_cache(src_zip, progress_cb=progress_cb)
+
+    def import_history(self, path: str) -> Dict[str, int]:
+        return history.import_from(path)
+
+    def export_history(self, path: str) -> int:
+        return history.export_to(path)
+
+    def history_count(self) -> int:
+        return history.count()
+
+    def import_library(self, paths: List[str], move: bool = False, log_cb=None, progress_cb=None) -> Dict[str, Any]:
+        return library_manager.import_paths(paths, move=move, log_cb=log_cb, progress_cb=progress_cb)
 
     def get_system_status(self) -> Dict[str, Any]:
         """Returns direct scraper status and disk metrics."""
