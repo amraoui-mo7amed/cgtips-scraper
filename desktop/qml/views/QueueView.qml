@@ -11,7 +11,7 @@ Item {
 
     readonly property var st: Bridge.queueStats || ({})
     readonly property var prog: Bridge.queueProgress || ({})
-    property string filter: "all"   // all | waiting | failed | done
+    property string filter: "all"   // all | waiting | done | no_model | failed
 
     readonly property var shown: {
         var out = []
@@ -19,6 +19,7 @@ Item {
         for (var i = 0; i < items.length; ++i) {
             var s = items[i].status
             if (root.filter === "waiting" && !(s === "pending" || s === "paused" || s === "downloading")) continue
+            if (root.filter === "no_model" && s !== "no_model") continue
             if (root.filter === "failed" && s !== "failed") continue
             if (root.filter === "done" && !(s === "done" || s === "skipped")) continue
             out.push(items[i])
@@ -39,6 +40,7 @@ Item {
             case "paused": return Theme.warning
             case "done": return Theme.success
             case "skipped": return Theme.textSecondary
+            case "no_model": return "#F59E0B"
             case "failed": return Theme.error
             default: return Theme.textMuted
         }
@@ -49,6 +51,7 @@ Item {
             case "paused": return Icons.pause
             case "done": return Icons.checkCircle
             case "skipped": return Icons.check
+            case "no_model": return Icons.box
             case "failed": return Icons.exclamationTriangle
             default: return Icons.clock
         }
@@ -59,6 +62,7 @@ Item {
             case "paused": return it.bytes_done ? "Paused at " + fmtBytes(it.bytes_done) + (it.bytes_total ? " of " + fmtBytes(it.bytes_total) : "") : "Paused"
             case "done": return "Downloaded"
             case "skipped": return it.error || "Skipped"
+            case "no_model": return it.error || "No 3D model available"
             case "failed": return it.error || "Failed"
             default: return "Waiting"
         }
@@ -91,6 +95,7 @@ Item {
                             { label: "Waiting", value: (root.st.active || 0), color: Theme.primaryLight },
                             { label: "Downloaded", value: (root.st.done || 0), color: Theme.success },
                             { label: "Skipped", value: (root.st.skipped || 0), color: Theme.textSecondary },
+                            { label: "No Model", value: (root.st.no_model || 0), color: "#F59E0B" },
                             { label: "Failed", value: (root.st.failed || 0), color: Theme.error }
                         ]
                         delegate: ColumnLayout {
@@ -130,8 +135,16 @@ Item {
                         onClicked: Bridge.queueResume()
                     }
                     ActionButton {
+                        text: "Retry no model (" + (root.st.no_model || 0) + ")"
+                        icon: Icons.rotate
+                        visible: (root.st.no_model || 0) > 0
+                        enabled: (root.st.no_model || 0) > 0
+                        onClicked: Bridge.queueRetryNoModel()
+                    }
+                    ActionButton {
                         text: "Retry failed (" + (root.st.failed || 0) + ")"
                         icon: Icons.rotate
+                        visible: (root.st.failed || 0) > 0
                         enabled: (root.st.failed || 0) > 0
                         onClicked: Bridge.queueRetryFailed()
                     }
@@ -152,8 +165,9 @@ Item {
                         model: [
                             { key: "all", label: "All" },
                             { key: "waiting", label: "Waiting" },
-                            { key: "failed", label: "Failed" },
-                            { key: "done", label: "Finished" }
+                            { key: "done", label: "Finished" },
+                            { key: "no_model", label: "No Model" + ((root.st.no_model || 0) > 0 ? " (" + root.st.no_model + ")" : "") },
+                            { key: "failed", label: "Failed" + ((root.st.failed || 0) > 0 ? " (" + root.st.failed + ")" : "") }
                         ]
                         delegate: ActionButton {
                             text: modelData.label
@@ -233,7 +247,7 @@ Item {
                                   + (row.it.status === "downloading" && row.bytesDone > 0
                                      ? "Downloading model  " + root.fmtBytes(row.bytesDone) + (row.bytesTotal ? " / " + root.fmtBytes(row.bytesTotal) : "")
                                      : root.statusText(row.it))
-                            color: row.it.status === "failed" ? Theme.error : Theme.textMuted
+                            color: row.it.status === "failed" ? Theme.error : (row.it.status === "no_model" ? "#F59E0B" : Theme.textMuted)
                             font.pixelSize: 10
                             elide: Text.ElideRight; Layout.fillWidth: true
                         }
@@ -251,7 +265,7 @@ Item {
                     }
 
                     ActionButton {
-                        visible: row.it.status === "failed"
+                        visible: row.it.status === "failed" || row.it.status === "no_model"
                         text: "Retry"
                         icon: Icons.rotate
                         onClicked: Bridge.queueRetry(row.it.id)
@@ -263,7 +277,7 @@ Item {
                         onClicked: Bridge.queueMoveToTop(row.it.id)
                     }
                     ActionButton {
-                        visible: (row.it.status === "done" || row.it.status === "skipped") && !!row.it.folder
+                        visible: (row.it.status === "done" || row.it.status === "skipped" || row.it.status === "no_model") && !!row.it.folder
                         text: "Open"
                         icon: Icons.folderOpen
                         onClicked: Bridge.openFolder(row.it.folder)

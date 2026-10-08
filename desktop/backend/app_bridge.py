@@ -1129,6 +1129,32 @@ class AppBridge(QObject):
         count = self.queue.clear_all()
         self.toast.emit("info", f"Cleared {count} item(s) from the download queue")
 
+    @Slot()
+    def queueRetryNoModel(self):
+        """Retries all articles in the queue whose 3D models were missing or failed to download."""
+        self._queue_user_paused = False
+        n = self.queue.retry_no_model()
+        self.toast.emit("info" if n else "warning", f"Retrying {n} article(s) with missing models" if n else "No articles with missing models to retry")
+
+    @Slot()
+    def queueClearNoModel(self):
+        """Removes all items without models from the download queue."""
+        count = self.queue.clear_no_model()
+        self.toast.emit("info", f"Cleared {count} article(s) without models from the queue")
+
+    @Slot(result="QVariant")
+    def getNoModelArticlesList(self) -> List[Dict[str, Any]]:
+        """Returns the persistent list of articles that had no downloaded model."""
+        f = Path(config.DATA_DIR) / "no_models.json"
+        if f.exists():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+        return []
+
     # --- Maintenance, Storage & Cache ---
 
     def _set_busy(self, busy: bool, message: str = ""):

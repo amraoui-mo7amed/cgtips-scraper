@@ -56,6 +56,43 @@ class DownloadQueue:
     def _file() -> Path:
         return Path(config.DATA_DIR) / "download_queue.json"
 
+    @staticmethod
+    def _no_models_file() -> Path:
+        return Path(config.DATA_DIR) / "no_models.json"
+
+    def _record_no_model(self, item: Dict[str, Any]):
+        """Persists articles without downloaded models to data/no_models.json."""
+        try:
+            f = self._no_models_file()
+            f.parent.mkdir(parents=True, exist_ok=True)
+            entries = []
+            if f.exists():
+                try:
+                    entries = json.loads(f.read_text(encoding="utf-8"))
+                    if not isinstance(entries, list):
+                        entries = []
+                except Exception:
+                    entries = []
+            existing_links = {e.get("link") for e in entries if isinstance(e, dict)}
+            link = item.get("link", "")
+            if link and link not in existing_links:
+                entries.append({
+                    "id": item.get("id"),
+                    "title": item.get("title", ""),
+                    "link": link,
+                    "category": item.get("category", ""),
+                    "subcategory": item.get("subcategory", ""),
+                    "folder": item.get("folder", ""),
+                    "gdrive_url": item.get("gdrive_url", ""),
+                    "error": item.get("error", "No model downloaded"),
+                    "date": item.get("finished") or time.strftime("%Y-%m-%d %H:%M"),
+                })
+                tmp = f.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(f)
+        except Exception as e:
+            logger.warning("Could not record to no_models.json: %s", e)
+
     def _load(self):
         try:
             data = json.loads(self._file().read_text(encoding="utf-8"))
@@ -68,6 +105,18 @@ class DownloadQueue:
         for it in self._items:
             if it.get("status") == "downloading":
                 it["status"] = "paused"  # the app closed mid-download; its partial file is kept
+            # Migrate articles without models from failed to no_model
+            err = (it.get("error") or "").lower()
+            if it.get("status") == "failed" and (
+                "model download failed" in err
+                or "no download link" in err
+                or "quota" in err
+                or "unreachable" in err
+                or "locker" in err
+                or "model" in err
+            ):
+                it["status"] = "no_model"
+                self._record_no_model(it)
         self._next_id = max([i.get("id", 0) for i in self._items] + [0]) + 1
         # Leftover work waits for the user (or the next "add") instead of starting on its own.
         self.paused = any(i["status"] in ACTIVE for i in self._items)
@@ -92,15 +141,18 @@ class DownloadQueue:
 
     def stats(self) -> Dict[str, Any]:
         with self._lock:
-            counts = {k: 0 for k in ("pending", "paused", "downloading", "done", "skipped", "failed")}
+            counts = {k: 0 for k in ("pending", "paused", "downloading", "done", "skipped", "no_model", "failed")}
             for i in self._items:
-                counts[i["status"]] = counts.get(i["status"], 0) + 1
+                st = i.get("status", "pending")
+                counts[st] = counts.get(st, 0) + 1
             current = next((i for i in self._items if i["status"] == "downloading"), None)
             return dict(
                 counts,
                 total=len(self._items),
                 active=counts["pending"] + counts["paused"] + counts["downloading"],
-                finished=counts["done"] + counts["skipped"] + counts["failed"],
+                finished=counts["done"] + counts["skipped"] + counts["no_model"] + counts["failed"],
+                no_model=counts.get("no_model", 0),
+                failed=counts.get("failed", 0),
                 running=self.is_running(),
                 is_paused=self.paused,
                 listing=self.listing,
@@ -187,7 +239,7 @@ class DownloadQueue:
     def retry(self, item_id: int):
         with self._lock:
             for i in self._items:
-                if i["id"] == item_id and i["status"] in ("failed", "skipped", "done"):
+                if i["id"] == item_id and i["status"] in ("failed", "skipped", "done", "no_model"):
                     i.update(status="pending", error="")
         self._changed()
         self.resume()
@@ -201,6 +253,16 @@ class DownloadQueue:
         if failed:
             self.resume()
         return len(failed)
+
+    def retry_no_model(self) -> int:
+        with self._lock:
+            items = [i for i in self._items if i["status"] == "no_model"]
+            for i in items:
+                i.update(status="pending", error="")
+        self._changed()
+        if items:
+            self.resume()
+        return len(items)
 
     def remove(self, item_id: int):
         with self._lock:
@@ -219,7 +281,15 @@ class DownloadQueue:
     def clear_finished(self) -> int:
         with self._lock:
             before = len(self._items)
-            self._items = [i for i in self._items if i["status"] in ACTIVE or i["status"] == "failed"]
+            self._items = [i for i in self._items if i["status"] in ACTIVE or i["status"] in ("failed", "no_model")]
+            removed = before - len(self._items)
+        self._changed()
+        return removed
+
+    def clear_no_model(self) -> int:
+        with self._lock:
+            before = len(self._items)
+            self._items = [i for i in self._items if i["status"] != "no_model"]
             removed = before - len(self._items)
         self._changed()
         return removed
@@ -321,7 +391,7 @@ class DownloadQueue:
                     history.add(item["link"], item["title"], item["category"], item["subcategory"])
                     self._finish(item, "done")
                 else:
-                    self._finish(item, "failed", "Model download failed (Drive quota or file unreachable)")
+                    self._finish(item, "no_model", "Model download failed (Drive quota or file unreachable)")
                 return True
 
             dest = config.FEEDS_DIR / (sanitize(item["category"]) or "Imported") / (sanitize(item["subcategory"]) or "Imported")
@@ -339,10 +409,23 @@ class DownloadQueue:
             if ok:
                 self._finish(item, "done")
                 return True
-            self._finish(item, "failed", res.get("error") or (
-                "Model download failed (Drive quota or file unreachable)" if item.get("gdrive_url")
-                else "No download link found"))
-            return False
+
+            err = (res.get("error") or "").strip()
+            gdrive = item.get("gdrive_url") or res.get("gdrive_url") or ""
+            if item.get("models"):
+                if gdrive or "quota" in err.lower() or "unreachable" in err.lower():
+                    reason = "Model download failed (Drive quota or file unreachable)"
+                elif "link" in err.lower() or "locker" in err.lower() or "not found" in err.lower():
+                    reason = err or "No download link found"
+                elif res.get("folder") or res.get("images"):
+                    reason = err or "Model not available"
+                else:
+                    reason = err or "No download link found"
+                self._finish(item, "no_model", reason)
+                return True
+            else:
+                self._finish(item, "failed", err or "Download failed")
+                return False
         except DownloadPaused as p:
             with self._lock:
                 item.update(status="paused", gdrive_url=p.gdrive_url or item.get("gdrive_url", ""),
@@ -356,10 +439,15 @@ class DownloadQueue:
 
     def _finish(self, item: Dict[str, Any], status: str, error: str = ""):
         with self._lock:
-            item.update(status=status, error=error, finished=time.strftime("%Y-%m-%d %H:%M"))
-            if status in ("done", "failed"):
-                item["attempts"] = item.get("attempts", 0) + 1
+            target = next((i for i in self._items if i.get("id") == item.get("id")), item)
+            target.update(status=status, error=error, finished=time.strftime("%Y-%m-%d %H:%M"))
+            if target is not item:
+                item.update(status=status, error=error, finished=target["finished"])
+            if status in ("done", "failed", "no_model"):
+                target["attempts"] = target.get("attempts", 0) + 1
             if status == "done":
-                item["gdrive_url"] = ""
-        if status == "done" and item.get("folder"):
-            self._on_item_done(dict(item))
+                target["gdrive_url"] = ""
+        if status == "no_model":
+            self._record_no_model(target)
+        if status in ("done", "no_model") and target.get("folder"):
+            self._on_item_done(dict(target))

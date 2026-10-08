@@ -118,6 +118,34 @@ class TestBulkAndQueue(unittest.TestCase):
         self.assertEqual(len(queue.items()), 0)
         self.assertEqual(queue.stats()["total"], 0)
 
+        # Test no_model handling
+        queue.add_articles(
+            [{"title": "Article No Model", "link": "https://example.com/no-model"}],
+            category="Furniture",
+            subcategory="Cabinets",
+            models=True,
+            images=True,
+            start=False,
+        )
+        self.assertEqual(len(queue.items()), 1)
+        item = queue.items()[0]
+        # Simulate finishing with no_model
+        queue._finish(item, "no_model", "Model download failed (Drive quota or file unreachable)")
+        stats = queue.stats()
+        self.assertEqual(stats["failed"], 0)
+        self.assertEqual(stats["no_model"], 1)
+
+        # Test retry_no_model
+        retried = queue.retry_no_model()
+        self.assertEqual(retried, 1)
+        self.assertEqual(queue.items()[0]["status"], "pending")
+
+        # Test clear_no_model
+        queue._finish(queue.items()[0], "no_model", "No download link found")
+        cleared_no_mod = queue.clear_no_model()
+        self.assertEqual(cleared_no_mod, 1)
+        self.assertEqual(len(queue.items()), 0)
+
     def test_cache_export_import(self):
         # Create a mock categories.json file (must be a JSON array)
         feed_file = Path(config.CATEGORIES_FILE)
