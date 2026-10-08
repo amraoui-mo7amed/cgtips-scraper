@@ -88,6 +88,13 @@ def main():
     bridge.loadCategories()
     bridge.loadLibrary()
 
+    def _cleanup():
+        bridge.cancelBatchDownload()
+        bridge.cancelCopy()
+        bridge.thread_pool.waitForDone(500)
+
+    app.aboutToQuit.connect(_cleanup)
+
     sys.exit(app.exec())
 
 

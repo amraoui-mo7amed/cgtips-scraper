@@ -16,6 +16,10 @@ Rectangle {
     property var itemData: ({})
     signal openGallery(var images, string title)
     signal resolveRequested(string link)
+    signal copyRequested(var itemData)
+    signal uploadRequested(var itemData)
+    signal retryRequested(var itemData)
+    signal deleteRequested(var itemData)
 
     Behavior on color { ColorAnimation { duration: 150 } }
     Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -98,13 +102,13 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Right Badge (Date or Status / Ready)
+                // Right Badge (Date or Status / Ready / Missing)
                 Rectangle {
                     width: Math.max(90, rightBadgeRow.implicitWidth + 18)
                     height: 22
                     radius: 4
-                    color: "#0F172A"
-                    border.color: "#334155"
+                    color: (root.itemData.folder_path && !root.itemData.has_model) ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.25) : "#0F172A"
+                    border.color: (root.itemData.folder_path && !root.itemData.has_model) ? Theme.warning : "#334155"
                     border.width: 1
 
                     RowLayout {
@@ -112,9 +116,9 @@ Rectangle {
                         anchors.centerIn: parent
                         spacing: 6
                         FaIcon {
-                            icon: root.itemData.published ? Icons.clock : (root.itemData.has_model ? Icons.check : Icons.cube)
+                            icon: root.itemData.published ? Icons.clock : (root.itemData.has_model ? Icons.check : (root.itemData.folder_path ? Icons.exclamationTriangle : Icons.cube))
                             size: 9
-                            iconColor: root.itemData.has_model ? "#10B981" : "#94A3B8"
+                            iconColor: root.itemData.published ? "#94A3B8" : (root.itemData.has_model ? "#10B981" : (root.itemData.folder_path ? Theme.warning : "#94A3B8"))
                         }
                         Text {
                             text: {
@@ -124,10 +128,11 @@ Rectangle {
                                     if (p.length >= 3) return p[1] + " " + p[2];
                                     return p[0];
                                 }
+                                if (root.itemData.folder_path && !root.itemData.has_model) return "Missing Model";
                                 if (root.itemData.model_size) return root.itemData.model_size;
                                 return "SketchUp 3D";
                             }
-                            color: "#F8FAFC"
+                            color: (root.itemData.folder_path && !root.itemData.has_model) ? Theme.warning : "#F8FAFC"
                             font.pixelSize: 10
                             font.bold: true
                         }
@@ -135,7 +140,7 @@ Rectangle {
                 }
             }
 
-            // Click thumbnail to open gallery lightbox if available
+            // Click thumbnail to open gallery lightbox
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
@@ -172,102 +177,248 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 6
 
-                // Direct Scrape & Download Button
-                Rectangle {
+                // Library Mode Actions (when item has folder_path)
+                Item {
+                    visible: !!root.itemData.folder_path
                     Layout.fillWidth: true
                     height: 32
-                    radius: Theme.radiusSm
-                    color: scrapeMouse.containsMouse ? Theme.primaryHover : Theme.primary
 
                     RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 6
-                        FaIcon {
-                            icon: root.itemData.download_url_full ? Icons.download : Icons.bolt
-                            size: 10
-                            iconColor: "white"
-                        }
-                        Text {
-                            text: root.itemData.download_url_full ? "Download .zip" : "Scrape"
-                            color: "white"
-                            font.pixelSize: 11
-                            font.bold: true
-                        }
-                    }
-
-                    MouseArea {
-                        id: scrapeMouse
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.itemData.download_url_full) {
-                                Bridge.openExternalUrl(root.itemData.download_url_full);
-                            } else if (root.itemData.link) {
-                                Bridge.resolveArticle(root.itemData.link, true, true);
-                                root.resolveRequested(root.itemData.link);
+                        spacing: 6
+
+                        // Primary Action: Re-download if missing, or Open folder if present
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: root.itemData.has_model ? (openFolderMouse.containsMouse ? Theme.surfaceElevated : Theme.card) : (retryMouse.containsMouse ? Theme.warning : Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.2))
+                            border.color: root.itemData.has_model ? Theme.border : Theme.warning
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 5
+                                FaIcon {
+                                    icon: root.itemData.has_model ? Icons.folderOpen : Icons.rotate
+                                    size: 10
+                                    iconColor: root.itemData.has_model ? Theme.primaryLight : (retryMouse.containsMouse ? "white" : Theme.warning)
+                                }
+                                Text {
+                                    text: root.itemData.has_model ? "Open" : "Re-Download"
+                                    color: root.itemData.has_model ? Theme.textPrimary : (retryMouse.containsMouse ? "white" : Theme.warning)
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: openFolderMouse
+                                visible: root.itemData.has_model
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Bridge.openFolder(root.itemData.folder_path)
+                            }
+
+                            MouseArea {
+                                id: retryMouse
+                                visible: !root.itemData.has_model
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    Bridge.retryMissingModel(root.itemData.folder_path)
+                                    root.retryRequested(root.itemData)
+                                }
+                            }
+                        }
+
+                        // Copy Article Button
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: copyArticleMouse.containsMouse ? Theme.surfaceElevated : Theme.card
+                            border.color: Theme.border
+
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: Icons.copy
+                                size: 10
+                                iconColor: Theme.primaryLight
+                            }
+
+                            MouseArea {
+                                id: copyArticleMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.copyRequested(root.itemData)
+                            }
+                        }
+
+                        // Upload Article Button
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: uploadArticleMouse.containsMouse ? Theme.surfaceElevated : Theme.card
+                            border.color: Theme.border
+
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: Icons.cloudUpload
+                                size: 10
+                                iconColor: Theme.primaryLight
+                            }
+
+                            MouseArea {
+                                id: uploadArticleMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.uploadRequested(root.itemData)
+                            }
+                        }
+
+                        // Delete Article Button
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: deleteCardMouse.containsMouse ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.2) : Theme.card
+                            border.color: deleteCardMouse.containsMouse ? Theme.danger : Theme.border
+
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: Icons.trash
+                                size: 10
+                                iconColor: deleteCardMouse.containsMouse ? Theme.danger : Theme.textMuted
+                            }
+
+                            MouseArea {
+                                id: deleteCardMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    Bridge.deleteLibraryModel(root.itemData.folder_path)
+                                    root.deleteRequested(root.itemData)
+                                }
                             }
                         }
                     }
                 }
 
-                // Open Post External Link
-                Rectangle {
-                    visible: !!root.itemData.link
-                    width: 32
+                // Explore / Feeds Mode Actions (when item does NOT have folder_path)
+                Item {
+                    visible: !root.itemData.folder_path
+                    Layout.fillWidth: true
                     height: 32
-                    radius: Theme.radiusSm
-                    color: openPostMouse.containsMouse ? Theme.surfaceElevated : Theme.card
-                    border.color: Theme.border
 
-                    FaIcon {
-                        anchors.centerIn: parent
-                        icon: Icons.externalLink
-                        size: 10
-                        iconColor: Theme.textSecondary
-                    }
-
-                    MouseArea {
-                        id: openPostMouse
+                    RowLayout {
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: Bridge.openWeb(root.itemData.link)
-                    }
-                }
+                        spacing: 6
 
-                // Copy Link Button
-                Rectangle {
-                    id: cardCopyBtn
-                    visible: !!root.itemData.link
-                    property bool isCopied: false
-                    Timer {
-                        id: cardCopyTimer
-                        interval: 2000
-                        onTriggered: cardCopyBtn.isCopied = false
-                    }
-                    width: 32
-                    height: 32
-                    radius: Theme.radiusSm
-                    color: copyPostMouse.containsMouse ? Theme.surfaceElevated : Theme.card
-                    border.color: cardCopyBtn.isCopied ? "#10B981" : Theme.border
+                        // Direct Scrape & Download Button
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: scrapeMouse.containsMouse ? Theme.primaryHover : Theme.primary
 
-                    FaIcon {
-                        anchors.centerIn: parent
-                        icon: cardCopyBtn.isCopied ? Icons.check : Icons.copy
-                        size: 10
-                        iconColor: cardCopyBtn.isCopied ? "#10B981" : Theme.textSecondary
-                    }
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: root.itemData.download_url_full ? Icons.download : Icons.bolt
+                                    size: 10
+                                    iconColor: "white"
+                                }
+                                Text {
+                                    text: root.itemData.download_url_full ? "Download .zip" : "Scrape"
+                                    color: "white"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
 
-                    MouseArea {
-                        id: copyPostMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            cardCopyBtn.isCopied = true
-                            cardCopyTimer.restart()
-                            Bridge.copyToClipboard(root.itemData.link || "")
+                            MouseArea {
+                                id: scrapeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (root.itemData.download_url_full) {
+                                        Bridge.openExternalUrl(root.itemData.download_url_full);
+                                    } else if (root.itemData.link) {
+                                        Bridge.resolveArticle(root.itemData.link, true, true);
+                                        root.resolveRequested(root.itemData.link);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Open Post External Link
+                        Rectangle {
+                            visible: !!root.itemData.link
+                            width: 32
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: openPostMouse.containsMouse ? Theme.surfaceElevated : Theme.card
+                            border.color: Theme.border
+
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: Icons.externalLink
+                                size: 10
+                                iconColor: Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: openPostMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Bridge.openWeb(root.itemData.link)
+                            }
+                        }
+
+                        // Copy Link Button
+                        Rectangle {
+                            id: cardCopyBtn
+                            visible: !!root.itemData.link
+                            property bool isCopied: false
+                            Timer {
+                                id: cardCopyTimer
+                                interval: 2000
+                                onTriggered: cardCopyBtn.isCopied = false
+                            }
+                            width: 32
+                            height: 32
+                            radius: Theme.radiusSm
+                            color: copyPostMouse.containsMouse ? Theme.surfaceElevated : Theme.card
+                            border.color: cardCopyBtn.isCopied ? "#10B981" : Theme.border
+
+                            FaIcon {
+                                anchors.centerIn: parent
+                                icon: cardCopyBtn.isCopied ? Icons.check : Icons.copy
+                                size: 10
+                                iconColor: cardCopyBtn.isCopied ? "#10B981" : Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: copyPostMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    cardCopyBtn.isCopied = true
+                                    cardCopyTimer.restart()
+                                    Bridge.copyToClipboard(root.itemData.link || "")
+                                }
+                            }
                         }
                     }
                 }

@@ -176,7 +176,7 @@ def download_from_locker(page, locker_url, dest_path, progress_cb: Optional[Call
         return None
 
 
-def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
+def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None, log_cb: Optional[Callable] = None):
     s = cloudscraper.create_scraper()
     s.headers.update({"User-Agent": FEED_UA})
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -206,6 +206,8 @@ def _download_req(file_id, dest_path, progress_cb: Optional[Callable] = None):
 
         if b"Quota exceeded" in r.content or b"Too many users" in r.content:
             logger.warning("Direct GDrive download hit quota limit for %s", file_id)
+            if log_cb:
+                log_cb("Google Drive download quota exceeded (Too many users downloaded recently)")
             return None
 
         ct = r.headers.get("Content-Type", "")
@@ -270,7 +272,7 @@ def _download_pw(page, file_id, dest_path):
     return None
 
 
-def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Callable] = None):
+def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Callable] = None, log_cb: Optional[Callable] = None):
     m = re.search(r"/file/d/([^/]+)", gdrive_url)
     if not m:
         return None
@@ -279,17 +281,24 @@ def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Cal
     dest_path.mkdir(parents=True, exist_ok=True)
 
     # 1. Direct requests download (fastest)
-    result = _download_req(file_id, dest_path, progress_cb=progress_cb)
+    result = _download_req(file_id, dest_path, progress_cb=progress_cb, log_cb=log_cb)
     if result:
         return result
 
     # 2. GDrive API quota bypass
     try:
-        from gdrive_api import copy_and_download
-        logger.info("Direct download failed/quota limited, attempting Drive API bypass for %s", file_id)
-        result = copy_and_download(file_id, dest_path)
-        if result:
-            return result
+        from config import CREDENTIALS_FILE
+        if Path(CREDENTIALS_FILE).exists():
+            if log_cb:
+                log_cb("Attempting Google Drive API quota bypass...")
+            from gdrive_api import copy_and_download
+            logger.info("Direct download failed/quota limited, attempting Drive API bypass for %s", file_id)
+            result = copy_and_download(file_id, dest_path)
+            if result:
+                return result
+        else:
+            if log_cb:
+                log_cb("Google Drive API bypass unavailable (credentials.json missing)")
     except Exception as e:
         logger.debug("Drive API fallback bypassed: %s", e)
 
@@ -297,6 +306,9 @@ def _download_from_gdrive(page, gdrive_url, dest_path, progress_cb: Optional[Cal
     if page:
         logger.info("Attempting browser download fallback for %s", file_id)
         result = _download_pw(page, file_id, dest_path)
-        return result
+        if result:
+            return result
+        elif log_cb:
+            log_cb("Browser fallback hit Google Drive download limit")
 
     return None

@@ -10,6 +10,9 @@ Item {
 
     signal openCategoryModalRequested()
     signal resolveRequested(string link)
+    signal openBatchDownloadRequested(string scope, string cat, string sub, string articleFolder, string articleTitle)
+    signal openCopyRequested(string scope, string cat, string sub, string articleFolder, string articleTitle)
+    signal openUploadRequested(string scope, string cat, string sub, string articleFolder, string articleTitle)
 
     property string selectedCategoryName: ""
     property string selectedSubcategoryName: ""
@@ -178,6 +181,120 @@ Item {
                 // Flexible spacer pushing right-hand actions to the right
                 Item {
                     Layout.fillWidth: true
+                }
+
+                // Copy Subcategory Action Button
+                Rectangle {
+                    visible: !!root.selectedSubcategoryName
+                    Layout.preferredHeight: 40
+                    Layout.preferredWidth: copySubRow.implicitWidth + 24
+                    radius: 6
+                    color: copySubMouse.containsMouse ? "#1E293B" : "#131C2E"
+                    border.color: copySubMouse.containsMouse ? Theme.primary : "#2A374A"
+                    border.width: 1
+
+                    RowLayout {
+                        id: copySubRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        FaIcon {
+                            icon: Icons.copy
+                            size: 11
+                            iconColor: Theme.primaryLight
+                        }
+                        Text {
+                            text: "Copy Subcategory"
+                            color: Theme.primaryLight
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: copySubMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.openCopyRequested("subcategory", root.selectedCategoryName, root.selectedSubcategoryName, "", "")
+                        }
+                    }
+                }
+
+                // Upload Subcategory to Loft Gallery
+                Rectangle {
+                    visible: !!root.selectedCategoryName && !!root.selectedSubcategoryName
+                    Layout.preferredHeight: 40
+                    Layout.preferredWidth: uploadSubRow.implicitWidth + 24
+                    radius: 6
+                    color: uploadSubMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : "#131C2E"
+                    border.color: uploadSubMouse.containsMouse ? Theme.primary : Theme.border
+                    border.width: 1
+
+                    RowLayout {
+                        id: uploadSubRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        FaIcon {
+                            icon: Icons.cloudUpload
+                            size: 11
+                            iconColor: Theme.primaryLight
+                        }
+                        Text {
+                            text: "Upload to Loft"
+                            color: Theme.primaryLight
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: uploadSubMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.openUploadRequested("subcategory", root.selectedCategoryName, root.selectedSubcategoryName, "", "")
+                        }
+                    }
+                }
+
+                // Re-Download Missing in Category
+                Rectangle {
+                    visible: !!root.selectedCategoryName && Bridge.missingModelsCount > 0
+                    Layout.preferredHeight: 40
+                    Layout.preferredWidth: retryCatRow.implicitWidth + 24
+                    radius: 6
+                    color: retryCatMouse.containsMouse ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.25) : "#131C2E"
+                    border.color: Theme.warning
+                    border.width: 1
+
+                    RowLayout {
+                        id: retryCatRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        FaIcon {
+                            icon: Icons.download
+                            size: 11
+                            iconColor: Theme.warning
+                        }
+                        Text {
+                            text: "Re-Download Missing"
+                            color: Theme.warning
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: retryCatMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.openBatchDownloadRequested("category", root.selectedCategoryName, root.selectedSubcategoryName, "", "")
+                        }
+                    }
                 }
 
                 // Refresh Feed Button

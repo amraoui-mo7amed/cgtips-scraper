@@ -8,10 +8,10 @@ import "views"
 ApplicationWindow {
     id: window
     visible: true
-    width: 1140
-    height: 750
-    minimumWidth: 980
-    minimumHeight: 640
+    width: 1560
+    height: 960
+    minimumWidth: 1080
+    minimumHeight: 680
     title: "CGTips 3D • Desktop Platform"
     color: Theme.background
 
@@ -121,6 +121,15 @@ ApplicationWindow {
                         resolverView.setUrl(link)
                         window.activeTab = 2
                     }
+                    onOpenBatchDownloadRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        batchDownloadModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
+                    onOpenCopyRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        copyModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
+                    onOpenUploadRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        uploadModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
                 }
 
                 ResolverView {
@@ -131,6 +140,18 @@ ApplicationWindow {
                     id: libraryView
                     onOpenGallery: function(images, title) {
                         lightbox.open(images, title, 0)
+                    }
+                    onOpenBatchDownloadRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        batchDownloadModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
+                    onOpenCopyRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        copyModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
+                    onOpenUploadRequested: function(scope, cat, sub, articleFolder, articleTitle) {
+                        uploadModal.open(scope, cat, sub, articleFolder, articleTitle)
+                    }
+                    onOpenClearConfirmRequested: function() {
+                        clearConfirmModal.open()
                     }
                 }
 
@@ -156,6 +177,26 @@ ApplicationWindow {
             categoriesView.selectSubcategory(catTitle, subTitle, feedUrl)
             window.activeTab = 1
         }
+    }
+
+    // Global Batch Download Modal
+    BatchDownloadModal {
+        id: batchDownloadModal
+    }
+
+    // Global Multi-Destination Copy Modal
+    CopyModal {
+        id: copyModal
+    }
+
+    // Global Loft Design Upload Modal
+    UploadModal {
+        id: uploadModal
+    }
+
+    // Global Clear Download List Modal
+    ClearConfirmModal {
+        id: clearConfirmModal
     }
 
     // Global Toast Notification

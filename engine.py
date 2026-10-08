@@ -167,6 +167,7 @@ def resolve_and_download_single_article(
     dest_dir: Optional[Path] = None,
     log_cb: Optional[Callable] = None,
     progress_cb: Optional[Callable] = None,
+    target_article_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Given any sketchup.cgtips.org article URL, resolves content locker, extracts GDrive link,
@@ -205,8 +206,11 @@ def resolve_and_download_single_article(
         title_el = page.query_selector("h1.entry-title, h1")
         title = title_el.text_content().strip() if title_el else "article"
         result["title"] = title
-        safe_title = sanitize(title)[:80].rstrip(" .")
-        article_folder = dest_dir / safe_title
+        if target_article_dir:
+            article_folder = Path(target_article_dir)
+        else:
+            safe_title = sanitize(title)[:80].rstrip(" .")
+            article_folder = dest_dir / safe_title
         article_folder.mkdir(parents=True, exist_ok=True)
         _log(f"Article title: '{title}'")
 
@@ -228,7 +232,7 @@ def resolve_and_download_single_article(
         if locker_url:
             _log(f"Found content locker URL: {locker_url}")
         else:
-            _log("No content locker found on article page")
+            _log("No content locker found on article page (article is likely an external plugin or tutorial, not a 3D model archive)")
 
         # 3. Download images if requested
         if download_imgs:
@@ -251,13 +255,28 @@ def resolve_and_download_single_article(
             if gdrive_url:
                 _log(f"Extracted Google Drive URL: {gdrive_url}")
                 _log("Downloading model archive...")
-                model_file = _download_from_gdrive(page, gdrive_url, model_folder, progress_cb=progress_cb)
+                model_file = _download_from_gdrive(page, gdrive_url, model_folder, progress_cb=progress_cb, log_cb=_log)
                 result["model_file"] = model_file
                 if model_file:
                     _log(f"Model saved: {Path(model_file).name} ({os.path.getsize(model_file)} bytes)")
                     result["success"] = True
+                    try:
+                        meta_file = article_folder / "meta.json"
+                        meta_data = {}
+                        if meta_file.exists():
+                            with open(meta_file, "r", encoding="utf-8") as mf:
+                                meta_data = json.load(mf)
+                        meta_data["article_url"] = article_url
+                        meta_data["title"] = title
+                        meta_data["gdrive_url"] = gdrive_url
+                        meta_data["locker_url"] = locker_url
+                        meta_data["model_file"] = Path(model_file).name
+                        with open(meta_file, "w", encoding="utf-8") as mf:
+                            json.dump(meta_data, mf, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
                 else:
-                    _log("Model download failed (quota or file unreachable)")
+                    _log("Model download failed (Google Drive quota exceeded or file unreachable)")
             else:
                 _log("Could not find Google Drive link on locker page")
         elif not download_model:

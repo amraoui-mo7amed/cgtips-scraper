@@ -5,6 +5,7 @@ QtObject {
     readonly property color background: "#0A0E1A"
     readonly property color surface: "#111827"
     readonly property color surfaceElevated: "#1E293B"
+    readonly property color surfaceHover: "#22314E"
     readonly property color card: "#161F30"
     readonly property color border: "#26334D"
 
@@ -16,6 +17,7 @@ QtObject {
     readonly property color success: "#10B981"
     readonly property color warning: "#F59E0B"
     readonly property color error: "#EF4444"
+    readonly property color danger: "#EF4444"
 
     readonly property color textPrimary: "#F8FAFC"
     readonly property color textSecondary: "#94A3B8"

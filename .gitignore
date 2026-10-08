@@ -21,5 +21,9 @@ desktop/.venv/
 desktop/__pycache__/
 build/
 dist/
+*.dmg
+*.zip
 *.spec.bak
 .DS_Store
+data/settings.json
+openapi.json

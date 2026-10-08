@@ -199,10 +199,19 @@ class ScraperService:
         res["first_image"] = imgs_file_urls[0] if imgs_file_urls else ""
         return res
 
-    def get_library(self, search: Optional[str] = None, category: Optional[str] = None) -> Dict[str, Any]:
+    def get_library(
+        self,
+        search: Optional[str] = None,
+        category: Optional[str] = None,
+        missing_only: bool = False,
+    ) -> Dict[str, Any]:
         """Scans local media library and formats image file:// URLs."""
         cat_filter = category if (category and category != "all") else None
-        data = library_manager.scan_library(search=search or None, category_filter=cat_filter)
+        data = library_manager.scan_library(
+            search=search or None,
+            category_filter=cat_filter,
+            missing_only=missing_only,
+        )
 
         items = data.get("items", [])
         for item in items:
@@ -264,11 +273,96 @@ class ScraperService:
         result = resolve_and_download_single_article(
             article_url=article_url,
             dest_dir=article_dir.parent,
+            target_article_dir=article_dir,
             download_model=True,
             download_imgs=False,
             log_cb=log_cb,
         )
         return bool(result.get("success") and result.get("model_file"))
+
+    def batch_download_missing_models(
+        self,
+        scope: str = "all",
+        target: Any = None,
+        progress_cb: Optional[Callable[[int, int, str, str, float], None]] = None,
+        log_cb: Optional[Callable[[str], None]] = None,
+        stop_event: Optional[Any] = None,
+        is_auto_retry_active: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        """Runs batch download for missing 3D models."""
+        from .batch_downloader import batch_download_missing
+        return batch_download_missing(
+            scope=scope,
+            target=target,
+            progress_cb=progress_cb,
+            log_cb=log_cb,
+            stop_event=stop_event,
+            is_auto_retry_active=is_auto_retry_active,
+        )
+
+    def copy_articles(
+        self,
+        scope: str = "all",
+        target: Any = None,
+        destinations: Optional[List[str]] = None,
+        include_client_agent: bool = True,
+        progress_cb: Optional[Callable] = None,
+        log_cb: Optional[Callable] = None,
+        stop_event: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Copies articles across multiple destination disks/folders."""
+        from .copy_manager import copy_manager
+        return copy_manager.copy_articles(
+            scope=scope,
+            target=target,
+            destinations=destinations,
+            include_client_agent=include_client_agent,
+            progress_cb=progress_cb,
+            log_cb=log_cb,
+            stop_event=stop_event,
+        )
+
+    def upload_articles(
+        self,
+        scope: str = "all",
+        target: Any = None,
+        api_url: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        progress_cb: Optional[Callable] = None,
+        log_cb: Optional[Callable] = None,
+        stop_event: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Uploads articles matching scope to Loft Design gallery API."""
+        from .upload_manager import upload_manager
+        return upload_manager.upload_articles(
+            scope=scope,
+            target=target,
+            api_url=api_url,
+            username=username,
+            password=password,
+            progress_cb=progress_cb,
+            log_cb=log_cb,
+            stop_event=stop_event,
+        )
+
+    def test_api_connection(
+        self,
+        api_url: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """Tests connection and credentials with Loft Design API."""
+        from .upload_manager import upload_manager
+        return upload_manager.test_connection(
+            api_url=api_url,
+            username=username,
+            password=password,
+        )
+
+    def clear_library(self, mode: str = "all", category: Optional[str] = None) -> int:
+        """Clears library items based on mode."""
+        return library_manager.clear_library(mode=mode, category=category)
 
     def get_system_status(self) -> Dict[str, Any]:
         """Returns direct scraper status and disk metrics."""
@@ -279,6 +373,7 @@ class ScraperService:
             "mode": "Direct Scraper Engine (In-Process)",
             "feeds_dir": str(FEEDS_DIR),
             "library_summary": lib.get("stats", {}),
+            "categories": lib.get("categories", []),
             "gdrive": gdrive,
             "categories_cached": Path(CATEGORIES_FILE).exists(),
             "selected_feeds_cached": Path(SELECTED_FEEDS_FILE).exists(),
