@@ -255,6 +255,36 @@ Item {
                         }
 
                         ColumnLayout {
+                            visible: !!Bridge.resolverResult.provider
+                            spacing: 4
+                            Text { text: "DOWNLOAD PROVIDER"; color: Theme.textMuted; font.pixelSize: 9; font.bold: true }
+                            RowLayout {
+                                spacing: 5
+                                FaIcon {
+                                    icon: {
+                                        var p = (Bridge.resolverResult.provider || "").toLowerCase();
+                                        if (p.indexOf("fshare") !== -1) return Icons.fire;
+                                        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return Icons.cloud;
+                                        return Icons.hdd;
+                                    }
+                                    size: 11
+                                    iconColor: {
+                                        var p = (Bridge.resolverResult.provider || "").toLowerCase();
+                                        if (p.indexOf("fshare") !== -1) return "#EF4444";
+                                        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#3B82F6";
+                                        return "#14B8A6";
+                                    }
+                                }
+                                Text {
+                                    text: Bridge.resolverResult.provider || ""
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
                             spacing: 4
                             Text { text: "STATUS"; color: Theme.textMuted; font.pixelSize: 9; font.bold: true }
                             Text { text: "Saved to Library"; color: Theme.success; font.pixelSize: 13; font.bold: true }
@@ -296,7 +326,7 @@ Item {
                         }
 
                         Rectangle {
-                            visible: !!Bridge.resolverResult.gdrive_url
+                            visible: !!(Bridge.resolverResult.download_url || Bridge.resolverResult.gdrive_url)
                             height: 38
                             width: 150
                             radius: Theme.radiusSm
@@ -307,7 +337,7 @@ Item {
                                 anchors.centerIn: parent
                                 spacing: 6
                                 Text {
-                                    text: "Google Drive"
+                                    text: Bridge.resolverResult.provider || "Download Link"
                                     color: Theme.textSecondary
                                     font.pixelSize: 11
                                     font.bold: true
@@ -322,7 +352,7 @@ Item {
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: Bridge.openWeb(Bridge.resolverResult.gdrive_url)
+                                onClicked: Bridge.openWeb(Bridge.resolverResult.download_url || Bridge.resolverResult.gdrive_url)
                             }
                         }
                     }

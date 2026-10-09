@@ -19,8 +19,10 @@ if (ROOT_DIR / 'data').exists():
 datas += collect_data_files('playwright', include_py_files=False)
 datas += collect_data_files('cloudscraper')
 datas += collect_data_files('googleapiclient')   # discovery documents
+datas += collect_data_files('yt_dlp')
 
 hiddenimports = collect_submodules('playwright') + collect_submodules('googleapiclient') + [
+    'yt_dlp',
     'lxml', 'lxml.etree',
     'google_auth_oauthlib', 'google_auth_oauthlib.flow',
     'google.auth.transport.requests', 'google_auth_httplib2',
@@ -108,8 +110,8 @@ if sys.platform == 'darwin':
         icon=None,
         bundle_identifier='org.cgtips.desktop',
         info_plist={
-            'CFBundleShortVersionString': '1.5.8',
-            'CFBundleVersion': '1.5.8',
+            'CFBundleShortVersionString': '1.5.9',
+            'CFBundleVersion': '1.5.9',
             'NSHighResolutionCapable': 'True',
             'LSMinimumSystemVersion': '11.0',
         },

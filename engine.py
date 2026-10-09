@@ -26,6 +26,8 @@ from utils import (
     download_from_locker,
     resolve_gdrive_from_locker,
     _download_from_gdrive,
+    detect_download_provider,
+    download_from_fshare,
 )
 
 logger = logging.getLogger("engine")
@@ -220,6 +222,7 @@ def resolve_and_download_single_article(
         "title": "",
         "locker_url": "",
         "gdrive_url": "",
+        "provider": "",
         "model_file": None,
         "images": [],
         "success": False,
@@ -277,15 +280,17 @@ def resolve_and_download_single_article(
 
         # 4. Download model if requested and locker found
         if download_model and locker_url:
-            _log(f"Resolving locker countdown and Google Drive link...")
+            _log(f"Resolving locker countdown and destination link...")
             model_folder = article_folder / "model"
             model_folder.mkdir(parents=True, exist_ok=True)
 
             gdrive_url = resolve_gdrive_from_locker(page, locker_url)
             result["gdrive_url"] = gdrive_url
+            provider = detect_download_provider(gdrive_url)
+            result["provider"] = provider
             if gdrive_url:
-                _log(f"Extracted Google Drive URL: {gdrive_url}")
-                _log("Downloading model archive...")
+                _log(f"Extracted destination URL ({provider}): {gdrive_url}")
+                _log(f"Downloading model archive via {provider}...")
                 try:
                     model_file = _download_from_gdrive(
                         page, gdrive_url, model_folder, progress_cb=progress_cb, log_cb=_log, cancel_event=cancel_event
@@ -306,11 +311,12 @@ def resolve_and_download_single_article(
                         gdrive_url=gdrive_url,
                         locker_url=locker_url,
                         model_file=Path(model_file).name,
+                        download_provider=provider,
                     )
                 else:
-                    _log("Model download failed (Google Drive quota exceeded or file unreachable)")
+                    _log(f"Model download failed ({provider} quota or file unreachable)")
             else:
-                _log("Could not find Google Drive link on locker page")
+                _log("Could not find download link on locker page")
         elif not download_model:
             result["success"] = True
 

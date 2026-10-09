@@ -100,6 +100,54 @@ Rectangle {
                     }
                 }
 
+                // Provider Badge (Google Drive / Fshare / etc.)
+                Rectangle {
+                    visible: !!root.itemData.provider
+                    height: 22
+                    width: Math.max(26, provBadgeRow.implicitWidth + 14)
+                    radius: 4
+                    color: {
+                        var p = (root.itemData.provider || "").toLowerCase();
+                        if (p.indexOf("fshare") !== -1) return "#7F1D1D";
+                        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#1E3A8A";
+                        return "#134E4A";
+                    }
+                    border.color: {
+                        var p = (root.itemData.provider || "").toLowerCase();
+                        if (p.indexOf("fshare") !== -1) return "#EF4444";
+                        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#3B82F6";
+                        return "#14B8A6";
+                    }
+                    border.width: 1
+
+                    RowLayout {
+                        id: provBadgeRow
+                        anchors.centerIn: parent
+                        spacing: 5
+                        FaIcon {
+                            icon: {
+                                var p = (root.itemData.provider || "").toLowerCase();
+                                if (p.indexOf("fshare") !== -1) return Icons.fire;
+                                if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return Icons.cloud;
+                                return Icons.hdd;
+                            }
+                            size: 9
+                            iconColor: {
+                                var p = (root.itemData.provider || "").toLowerCase();
+                                if (p.indexOf("fshare") !== -1) return "#FCA5A5";
+                                if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#93C5FD";
+                                return "#5EEAD4";
+                            }
+                        }
+                        Text {
+                            text: root.itemData.provider || ""
+                            color: "#F8FAFC"
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                    }
+                }
+
                 Item { Layout.fillWidth: true }
 
                 // Right Badge (Date or Status / Ready / Missing)

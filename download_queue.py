@@ -24,7 +24,7 @@ from engine import (
     sanitize,
     write_meta,
 )
-from utils import DownloadPaused, get_feed
+from utils import DownloadPaused, get_feed, detect_download_provider
 
 logger = logging.getLogger("queue")
 
@@ -84,6 +84,7 @@ class DownloadQueue:
                     "subcategory": item.get("subcategory", ""),
                     "folder": item.get("folder", ""),
                     "gdrive_url": item.get("gdrive_url", ""),
+                    "provider": item.get("provider") or detect_download_provider(item.get("gdrive_url", "")),
                     "error": item.get("error", "No model downloaded"),
                     "date": item.get("finished") or time.strftime("%Y-%m-%d %H:%M"),
                 })
@@ -184,7 +185,9 @@ class DownloadQueue:
                     "category": category, "subcategory": subcategory,
                     "models": bool(models), "images": bool(images),
                     "status": "pending", "error": "", "attempts": 0,
-                    "gdrive_url": "", "folder": "", "bytes_done": 0, "bytes_total": 0,
+                    "gdrive_url": a.get("gdrive_url") or "",
+                    "provider": a.get("provider") or detect_download_provider(a.get("gdrive_url") or a.get("download_url") or ""),
+                    "folder": "", "bytes_done": 0, "bytes_total": 0,
                     "added": time.strftime("%Y-%m-%d %H:%M"), "finished": "",
                 }
                 self._next_id += 1
@@ -405,6 +408,9 @@ class DownloadQueue:
                            category=item["category"], subcategory=item["subcategory"])
             if res.get("gdrive_url"):
                 item["gdrive_url"] = res["gdrive_url"]  # a retry can go straight to the model
+                item["provider"] = res.get("provider") or detect_download_provider(res["gdrive_url"])
+            elif res.get("provider"):
+                item["provider"] = res["provider"]
             ok = bool(res.get("success")) or (not item["models"] and bool(res.get("images")))
             if ok:
                 self._finish(item, "done")
@@ -412,9 +418,10 @@ class DownloadQueue:
 
             err = (res.get("error") or "").strip()
             gdrive = item.get("gdrive_url") or res.get("gdrive_url") or ""
+            prov = item.get("provider") or detect_download_provider(gdrive) or "Provider"
             if item.get("models"):
                 if gdrive or "quota" in err.lower() or "unreachable" in err.lower():
-                    reason = "Model download failed (Drive quota or file unreachable)"
+                    reason = f"Model download failed ({prov} quota or file unreachable)"
                 elif "link" in err.lower() or "locker" in err.lower() or "not found" in err.lower():
                     reason = err or "No download link found"
                 elif res.get("folder") or res.get("images"):

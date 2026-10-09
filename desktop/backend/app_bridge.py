@@ -53,12 +53,29 @@ def _build_downloaded_index(library_items: List[Dict[str, Any]]) -> Dict[str, st
     return index
 
 
-def _mark_downloaded(feed_items: List[Dict[str, Any]], index: Dict[str, str]) -> List[Dict[str, Any]]:
+def _build_provider_index(library_items: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Maps article URLs and title keys to their detected download provider."""
+    index: Dict[str, str] = {}
+    for it in library_items:
+        p = it.get("provider")
+        if not p:
+            continue
+        if it.get("article_url"):
+            index[it["article_url"].rstrip("/")] = p
+        index[_title_key(it.get("title", ""))] = p
+    return index
+
+
+def _mark_downloaded(feed_items: List[Dict[str, Any]], index: Dict[str, str], provider_index: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    provider_index = provider_index or {}
     out = []
     for e in feed_items:
-        folder = index.get((e.get("link") or "").rstrip("/")) or index.get(_title_key(e.get("title", "")))
+        l = (e.get("link") or "").rstrip("/")
+        tk = _title_key(e.get("title", ""))
+        folder = index.get(l) or index.get(tk)
         downloaded = bool(folder) or history.has(e.get("link") or "", e.get("title") or "")
-        out.append(dict(e, downloaded=downloaded, local_folder=folder or ""))
+        prov = e.get("provider") or provider_index.get(l) or provider_index.get(tk) or ""
+        out.append(dict(e, downloaded=downloaded, local_folder=folder or "", provider=prov))
     return out
 
 
@@ -210,6 +227,7 @@ class AppBridge(QObject):
 
         self._library_items: List[Dict[str, Any]] = []
         self._downloaded_index: Dict[str, str] = {}
+        self._provider_index: Dict[str, str] = {}
         self._library_query = ("", "all")
         self._library_loading = False
         self._library_total = 0
@@ -750,7 +768,7 @@ class AppBridge(QObject):
             return self.service.search(q, page=page)
 
         def _on_success(results):
-            self._search_results = results
+            self._search_results = _mark_downloaded(results, self._downloaded_index, self._provider_index)
             self._is_searching = False
             self.searchResultsChanged.emit()
             self.isSearchingChanged.emit()
@@ -807,7 +825,7 @@ class AppBridge(QObject):
             return self.service.get_feed_preview(feed_url, limit=15)
 
         def _on_success(items):
-            self._feed_items = _mark_downloaded(items, self._downloaded_index)
+            self._feed_items = _mark_downloaded(items, self._downloaded_index, self._provider_index)
             self._feed_loading = False
             self.feedItemsChanged.emit()
             self.feedLoadingChanged.emit()
@@ -906,9 +924,14 @@ class AppBridge(QObject):
             self._library_loading = False
 
             self._downloaded_index = _build_downloaded_index(items)
+            known_prov = self.service.get_known_providers()
+            self._provider_index = {**known_prov, **_build_provider_index(items)}
             if self._feed_items:
-                self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
+                self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index, self._provider_index)
                 self.feedItemsChanged.emit()
+            if self._search_results:
+                self._search_results = _mark_downloaded(self._search_results, self._downloaded_index, self._provider_index)
+                self.searchResultsChanged.emit()
 
             self.libraryItemsChanged.emit()
             self.libraryTotalChanged.emit()
@@ -941,9 +964,16 @@ class AppBridge(QObject):
                 if item.get("article_url"):
                     self._downloaded_index[item["article_url"].rstrip("/")] = item["folder_path"]
                 self._downloaded_index[_title_key(item.get("title", ""))] = item["folder_path"]
-                if self._feed_items:
-                    self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index)
-                    self.feedItemsChanged.emit()
+            if item.get("provider"):
+                if item.get("article_url"):
+                    self._provider_index[item["article_url"].rstrip("/")] = item["provider"]
+                self._provider_index[_title_key(item.get("title", ""))] = item["provider"]
+            if self._feed_items:
+                self._feed_items = _mark_downloaded(self._feed_items, self._downloaded_index, self._provider_index)
+                self.feedItemsChanged.emit()
+            if self._search_results:
+                self._search_results = _mark_downloaded(self._search_results, self._downloaded_index, self._provider_index)
+                self.searchResultsChanged.emit()
             self.libraryItemsChanged.emit()
             self.libraryTotalChanged.emit()
             self.historyChanged.emit()

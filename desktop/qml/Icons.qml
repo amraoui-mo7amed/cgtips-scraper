@@ -69,4 +69,6 @@ Item {
     readonly property string squareCheck: "\uf14a"
     readonly property string fileImport: "\uf56f"
     readonly property string arrowUp: "\uf062"
+    readonly property string fire: "\uf06d"
+    readonly property string cloud: "\uf0c2"
 }

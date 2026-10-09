@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup as bs
 
 import config
 from config import BASE_URL
+from utils import detect_download_provider
 
 logger = logging.getLogger("library")
 
@@ -198,6 +199,7 @@ class LibraryManager:
             "images": images,
             "images_count": len(images),
             "article_url": meta.get("article_url"),
+            "provider": meta.get("download_provider") or detect_download_provider(meta.get("gdrive_url") or meta.get("model_url") or ""),
             "imported": bool(meta.get("imported")),
             "modified_at": int(article_dir.stat().st_mtime),
             "_image_bytes": sum(i.stat().st_size for i in raw_imgs),

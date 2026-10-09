@@ -149,8 +149,28 @@ def extract_download_url(article_url, retries=3):
     return None
 
 
+def detect_download_provider(url: Optional[str]) -> str:
+    """Identifies the hosting platform / download provider from a URL."""
+    if not url:
+        return ""
+    u = str(url).lower()
+    if "drive.google.com" in u or "docs.google.com" in u:
+        return "Google Drive"
+    if "fshare.vn" in u:
+        return "Fshare"
+    if "mediafire.com" in u:
+        return "MediaFire"
+    if "mega.nz" in u or "mega.io" in u:
+        return "Mega"
+    if "dropbox.com" in u:
+        return "Dropbox"
+    if "link.cgtips.org" in u:
+        return "CGTips Locker"
+    return "Direct"
+
+
 def resolve_gdrive_from_locker(page, locker_url):
-    """Loads content locker page with Playwright and extracts Google Drive or mirror destination URL."""
+    """Loads content locker page with Playwright and extracts Google Drive, Fshare, or mirror destination URL."""
     try:
         page.goto(locker_url, timeout=30000, wait_until="domcontentloaded")
         page.wait_for_timeout(3500)
@@ -159,7 +179,7 @@ def resolve_gdrive_from_locker(page, locker_url):
         dl_url = page.evaluate("""() => {
             const btn = document.querySelector('.download_dem a.btn, a.btn-download, a#download-btn');
             if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-            const mirrors = ['drive.google.com', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+            const mirrors = ['drive.google.com', 'fshare.vn', 'mediafire.com', 'mega.nz', 'dropbox.com'];
             for (const a of document.querySelectorAll('a')) {
                 if (a.href && mirrors.some(m => a.href.includes(m))) {
                     return a.href;
@@ -174,14 +194,18 @@ def resolve_gdrive_from_locker(page, locker_url):
             dl_url = page.evaluate("""() => {
                 const btn = document.querySelector('.download_dem a.btn, a.btn-download');
                 if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-                const anyDrive = Array.from(document.querySelectorAll('a')).map(a => a.href).find(h => h && h.includes('drive.google.com'));
-                return anyDrive || null;
+                const mirrors = ['drive.google.com', 'fshare.vn', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+                const anyMirror = Array.from(document.querySelectorAll('a')).map(a => a.href).find(h => h && mirrors.some(m => h.includes(m)));
+                return anyMirror || null;
             }""")
 
         return dl_url
     except Exception as e:
         logger.warning("Failed to resolve locker %s: %s", locker_url, e)
         return None
+
+
+resolve_destination_from_locker = resolve_gdrive_from_locker
 
 
 def download_from_locker(
@@ -591,6 +615,338 @@ def _download_direct_url(
     return None
 
 
+def _download_fshare_guest(
+    fshare_url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 1: Fshare Guest API direct HTTP session."""
+    dest_path = Path(dest_path)
+    dest_path.mkdir(parents=True, exist_ok=True)
+
+    m = re.search(r"/file/([a-zA-Z0-9]+)", fshare_url)
+    linkcode = m.group(1) if m else None
+    if not linkcode:
+        return None
+
+    if log_cb:
+        log_cb("  [Fshare Method 1/4] Guest API: Fetching session & token...")
+
+    clean_url = f"https://www.fshare.vn/file/{linkcode}"
+    s = cloudscraper.create_scraper()
+    s.headers.update({
+        "User-Agent": FEED_UA,
+        "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+    })
+
+    try:
+        if cancel_event and cancel_event.is_set():
+            raise DownloadPaused()
+
+        r1 = s.get(clean_url, timeout=30)
+        r1.raise_for_status()
+        soup = bs(r1.text, "html.parser")
+        form = soup.find("form", id="form-download")
+        if not form:
+            return None
+
+        csrf_input = form.find("input", attrs={"name": "_csrf-app"})
+        csrf = csrf_input.get("value") if csrf_input else ""
+        if not csrf:
+            return None
+
+        post_data = {
+            "_csrf-app": csrf,
+            "linkcode": linkcode,
+            "withFcode5": "0",
+        }
+        post_headers = {
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": clean_url,
+        }
+
+        r2 = s.post("https://www.fshare.vn/download/get", data=post_data, headers=post_headers, timeout=30)
+        r2.raise_for_status()
+        data = r2.json()
+
+        redirect_url = data.get("url")
+        if not redirect_url:
+            if log_cb and "errors" in data:
+                log_cb(f"  [Fshare Guest API] Token error: {data.get('errors')}")
+            return None
+
+        wait_time = int(data.get("wait_time", 60))
+        fallback_name = data.get("name") or f"{linkcode}.rar"
+
+        if log_cb:
+            log_cb(f"  [Fshare Method 1/4] Waiting {wait_time}s countdown for '{fallback_name}'...")
+
+        step = 1.0
+        elapsed = 0.0
+        last_log = time.monotonic()
+        while elapsed < wait_time + 1.5:
+            if cancel_event and cancel_event.is_set():
+                raise DownloadPaused()
+            time.sleep(step)
+            elapsed += step
+            remaining = max(0, int(wait_time - elapsed))
+            if time.monotonic() - last_log >= 10 and log_cb:
+                log_cb(f"  [Fshare Countdown] {remaining}s remaining...")
+                last_log = time.monotonic()
+
+        if log_cb:
+            log_cb("  [Fshare Method 1/4] Resolving direct CDN download stream...")
+
+        r3 = s.get(redirect_url, allow_redirects=False, timeout=30)
+        cdn_url = r3.headers.get("Location") if r3.status_code in (301, 302) else None
+        if not cdn_url:
+            if log_cb:
+                log_cb(f"  [Fshare Guest API] Redirect failed with HTTP {r3.status_code}")
+            return None
+
+        if log_cb:
+            log_cb("  [Fshare Method 1/4] ✓ CDN URL acquired, streaming model file...")
+
+        r4 = s.get(cdn_url, stream=True, timeout=60)
+        r4.raise_for_status()
+
+        return _stream_response_to_file(r4, dest_path, fallback_name, progress_cb, cancel_event)
+
+    except DownloadPaused:
+        raise
+    except Exception as e:
+        logger.debug("Fshare Guest API failed for %s: %s", fshare_url, e)
+        if log_cb:
+            log_cb(f"  [Fshare Guest API] {e}")
+        return None
+
+
+def _download_fshare_playwright(
+    page,
+    fshare_url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 2: Interactive Playwright browser automation for Fshare."""
+    if not page:
+        return None
+    dest_path = Path(dest_path)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    if log_cb:
+        log_cb("  [Fshare Method 2/4] Playwright browser: Navigating and clicking download...")
+
+    try:
+        page.goto(fshare_url, timeout=35000, wait_until="domcontentloaded")
+        page.wait_for_timeout(2500)
+
+        dl_info = page.evaluate("""() => {
+            const chk = document.querySelector("#policy-checkbox");
+            if (chk) chk.checked = true;
+            const btn = document.querySelector("#download-free, .btn_guest_free_download, .btn-download-free");
+            if (!btn) return {found: false};
+            if (typeof downloadFile === "function") {
+                downloadFile(btn);
+                return {found: true, called: true};
+            }
+            btn.click();
+            return {found: true, called: false};
+        }""")
+
+        if not dl_info or not dl_info.get("found"):
+            if log_cb:
+                log_cb("  [Fshare Browser] Download button not found on page")
+            return None
+
+        countdown_secs = 65
+        for _ in range(10):
+            wait_text = page.evaluate("""() => {
+                const el = document.querySelector(".content_waiting_time, .wait-to-download, h2");
+                return el ? el.textContent : "";
+            }""")
+            m = re.search(r"(\d+)\s*(?:s|giây|second)", wait_text or "", re.IGNORECASE)
+            if m:
+                countdown_secs = int(m.group(1)) + 3
+                break
+            page.wait_for_timeout(1000)
+
+        if log_cb:
+            log_cb(f"  [Fshare Method 2/4] Waiting {countdown_secs}s countdown in browser...")
+
+        start_t = time.monotonic()
+        while time.monotonic() - start_t < countdown_secs:
+            if cancel_event and cancel_event.is_set():
+                raise DownloadPaused()
+            page.wait_for_timeout(2000)
+
+        with page.expect_download(timeout=25000) as dl_event:
+            page.evaluate("""() => {
+                const retryBtn = document.querySelector(".cus_down_end_countdown a, .download-btn, #download-btn");
+                if (retryBtn) retryBtn.click();
+                if (typeof afterWait_New === "function" && typeof backupDownLink !== "undefined" && backupDownLink) {
+                    window.location.href = backupDownLink;
+                }
+            }""")
+
+        dl = dl_event.value
+        name = dl.suggested_filename or f"fshare_model_{int(time.time())}.rar"
+        target_file = dest_path / name
+        dl.save_as(str(target_file))
+
+        if target_file.exists() and target_file.stat().st_size > 5000:
+            if log_cb:
+                log_cb(f"  [Fshare Method 2/4] ✓ Playwright download completed: {name}")
+            return str(target_file)
+
+    except DownloadPaused:
+        raise
+    except Exception as e:
+        logger.debug("Playwright Fshare error for %s: %s", fshare_url, e)
+        if log_cb:
+            log_cb(f"  [Fshare Browser] {e}")
+    return None
+
+
+def _download_fshare_ytdlp(
+    fshare_url: str,
+    dest_path: Path,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 3: yt-dlp CLI / engine extraction for Fshare."""
+    try:
+        import yt_dlp
+    except ImportError:
+        return None
+
+    if log_cb:
+        log_cb("  [Fshare Method 3/4] Trying yt-dlp engine...")
+
+    dest_path = Path(dest_path)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    before_files = set(dest_path.iterdir())
+
+    ydl_opts = {
+        "outtmpl": str(dest_path / "%(title)s.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([fshare_url])
+        after_files = set(dest_path.iterdir()) - before_files
+        for f in after_files:
+            if f.is_file() and f.stat().st_size > 5000:
+                if log_cb:
+                    log_cb(f"  [Fshare Method 3/4] ✓ yt-dlp succeeded: {f.name}")
+                return str(f)
+    except Exception as e:
+        logger.debug("yt-dlp failed for %s: %s", fshare_url, e)
+    return None
+
+
+def _download_fshare_cookies(
+    page,
+    fshare_url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 4: Replay cookies and captured source tokens from active browser context."""
+    if not page:
+        return None
+    try:
+        cookies = page.context.cookies(["https://www.fshare.vn", "https://fshare.vn"])
+        if not cookies:
+            return None
+        if log_cb:
+            log_cb("  [Fshare Method 4/4] Cookie session replay from browser...")
+
+        s = cloudscraper.create_scraper()
+        s.headers.update({"User-Agent": FEED_UA})
+        for c in cookies:
+            s.cookies.set(c["name"], c["value"], domain=c.get("domain", ".fshare.vn"), path=c.get("path", "/"))
+
+        direct_link = page.evaluate("() => typeof backupDownLink !== 'undefined' ? backupDownLink : null")
+        if direct_link and str(direct_link).startswith("http"):
+            r = s.get(direct_link, allow_redirects=False, timeout=30)
+            if r.status_code in (301, 302) and r.headers.get("Location"):
+                r_stream = s.get(r.headers["Location"], stream=True, timeout=60)
+                if r_stream.status_code in (200, 206):
+                    fallback = Path(fshare_url.rstrip("/")).name + ".rar"
+                    return _stream_response_to_file(r_stream, dest_path, fallback, progress_cb, cancel_event)
+    except DownloadPaused:
+        raise
+    except Exception as e:
+        logger.debug("Fshare cookie handshake error: %s", e)
+    return None
+
+
+def download_from_fshare(
+    page_or_url,
+    fshare_url_or_dest = None,
+    dest_path = None,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """
+    Downloads model archive from Fshare.vn across multiple methods:
+    1. Fshare Guest API (Fast HTTP session with countdown & CDN stream)
+    2. Playwright Interactive Browser Automation
+    3. yt-dlp CLI / Engine
+    4. Browser Session Cookie & DOM Handshake
+
+    Can be called either as:
+        download_from_fshare(page, fshare_url, dest_path, ...)
+    or:
+        download_from_fshare(fshare_url, dest_path, ...)
+    """
+    if isinstance(page_or_url, (str, Path)) and (dest_path is None or not isinstance(dest_path, (str, Path))):
+        page = None
+        fshare_url = str(page_or_url)
+        dest_path = Path(fshare_url_or_dest)
+    else:
+        page = page_or_url
+        fshare_url = str(fshare_url_or_dest)
+        dest_path = Path(dest_path)
+
+    dest_path.mkdir(parents=True, exist_ok=True)
+    if log_cb:
+        log_cb(f"Starting Fshare download pipeline for: {fshare_url}")
+
+    # Method 1: Guest API
+    res = _download_fshare_guest(fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+    if res:
+        return res
+
+    # Method 2: Playwright Interactive Automation
+    if page:
+        res = _download_fshare_playwright(page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+
+    # Method 3: yt-dlp
+    res = _download_fshare_ytdlp(fshare_url, dest_path, log_cb=log_cb, cancel_event=cancel_event)
+    if res:
+        return res
+
+    # Method 4: Browser Session Cookie Handshake
+    if page:
+        res = _download_fshare_cookies(page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+
+    if log_cb:
+        log_cb("  ✗ All Fshare download methods attempted")
+    return None
+
+
 def _download_from_gdrive(
     page,
     gdrive_url,
@@ -601,6 +957,7 @@ def _download_from_gdrive(
 ):
     """
     Downloads model archive using all available methods in sequence without prompting the user:
+    0. Fshare Multi-Method Pipeline (Guest API, Playwright, yt-dlp, Cookie Handshake)
     1. Direct HTTP CloudScraper Stream
     2. Google Drive API Quota Bypass (if credentials present)
     3. Playwright Browser Interactive Automation
@@ -610,6 +967,13 @@ def _download_from_gdrive(
     """
     dest_path = Path(dest_path)
     dest_path.mkdir(parents=True, exist_ok=True)
+
+    # 0. Fshare.vn download pipeline
+    if "fshare.vn" in gdrive_url:
+        res = download_from_fshare(page, gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+        return None
 
     # 1. Generic non-GDrive URL check (Mediafire, Dropbox, Mega, direct CDN)
     if "drive.google.com" not in gdrive_url and "google.com" not in gdrive_url:

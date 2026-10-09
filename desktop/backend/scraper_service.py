@@ -36,7 +36,7 @@ from config import (
     HEADLESS,
 )
 from engine import load_categories, resolve_and_download_single_article
-from utils import get_feed
+from utils import get_feed, detect_download_provider
 from .library import library_manager, format_bytes
 from gdrive_api import (
     check_gdrive_status,
@@ -57,6 +57,57 @@ class ScraperService:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
 
+    def get_known_providers(self) -> Dict[str, str]:
+        """Maps known article links and titles to their download providers."""
+        mapping: Dict[str, str] = {}
+        # 1. From data/no_models.json
+        try:
+            no_models_file = Path(config.DATA_DIR) / "no_models.json"
+            if no_models_file.exists():
+                data = json.loads(no_models_file.read_text(encoding="utf-8"))
+                for it in data:
+                    l = (it.get("link") or "").rstrip("/")
+                    p = it.get("provider") or detect_download_provider(it.get("gdrive_url") or "")
+                    if l and p:
+                        mapping[l] = p
+                    t = (it.get("title") or "").strip().lower()
+                    if t and p:
+                        mapping[t] = p
+        except Exception:
+            pass
+
+        # 2. From data/download_queue.json
+        try:
+            q_file = Path(config.DATA_DIR) / "download_queue.json"
+            if q_file.exists():
+                data = json.loads(q_file.read_text(encoding="utf-8"))
+                for it in data:
+                    l = (it.get("link") or "").rstrip("/")
+                    p = it.get("provider") or detect_download_provider(it.get("gdrive_url") or "")
+                    if l and p:
+                        mapping[l] = p
+                    t = (it.get("title") or "").strip().lower()
+                    if t and p:
+                        mapping[t] = p
+        except Exception:
+            pass
+
+        # 3. From library scan
+        try:
+            lib_items = library_manager.scan_library().get("items", [])
+            for it in lib_items:
+                l = (it.get("article_url") or "").rstrip("/")
+                p = it.get("provider")
+                if l and p:
+                    mapping[l] = p
+                t = (it.get("title") or "").strip().lower()
+                if t and p:
+                    mapping[t] = p
+        except Exception:
+            pass
+
+        return mapping
+
     def search(self, query: str, page: int = 1) -> List[Dict[str, Any]]:
         """Directly searches CGTips for SketchUp 3D models."""
         q = query.strip()
@@ -72,6 +123,7 @@ class ScraperService:
 
         soup = BeautifulSoup(resp.text, "html.parser")
         results = []
+        known = self.get_known_providers()
 
         for art in soup.select("article"):
             title_el = art.select_one(".entry-title a, h2 a, h1 a")
@@ -109,6 +161,7 @@ class ScraperService:
 
             thumb_url = thumb or ""
             thumb_display = f"image://cgtips/{requests.utils.quote(thumb_url, safe='')}" if thumb_url.startswith("http") else thumb_url
+            provider = known.get(link.rstrip("/")) or known.get(title.strip().lower()) or ""
 
             results.append({
                 "title": title,
@@ -117,6 +170,7 @@ class ScraperService:
                 "thumbnail_full": thumb_display,
                 "raw_thumbnail": thumb_url,
                 "category": category,
+                "provider": provider,
             })
 
         thumbs_to_fetch = [r["raw_thumbnail"] for r in results if r.get("raw_thumbnail")]
@@ -159,9 +213,15 @@ class ScraperService:
             return []
         entries = get_feed(feed_url=clean_url, max_items=limit)
         items = []
+        known = self.get_known_providers()
+
         for e in entries:
             raw_img = e.get("image_url", "")
             img_display = f"image://cgtips/{requests.utils.quote(raw_img, safe='')}" if raw_img.startswith("http") else raw_img
+            e_link = (e.get("link") or "").rstrip("/")
+            e_title = (e.get("title") or "").strip().lower()
+            dl_url = e.get("download_url", "")
+            provider = known.get(e_link) or known.get(e_title) or detect_download_provider(dl_url) or ""
             items.append({
                 "title": e.get("title", "Untitled Article"),
                 "link": e.get("link", ""),
@@ -169,7 +229,8 @@ class ScraperService:
                 "image_url": img_display,
                 "raw_image_url": raw_img,
                 "creator": e.get("creator", ""),
-                "download_url": e.get("download_url", ""),
+                "download_url": dl_url,
+                "provider": provider,
             })
 
         imgs_to_fetch = [item["raw_image_url"] for item in items if item.get("raw_image_url")]
@@ -199,6 +260,8 @@ class ScraperService:
             log_cb=log_cb,
             progress_cb=progress_cb,
         )
+
+        res["provider"] = res.get("provider") or detect_download_provider(res.get("gdrive_url") or "")
 
         # Convert local image paths to file:// QUrl strings
         imgs = res.get("images", [])

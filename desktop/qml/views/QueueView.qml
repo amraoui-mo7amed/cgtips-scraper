@@ -243,7 +243,9 @@ Item {
                             elide: Text.ElideRight; Layout.fillWidth: true
                         }
                         Text {
-                            text: row.it.category + " › " + row.it.subcategory + "   •   "
+                            text: (row.it.category ? (row.it.category + " › " + row.it.subcategory) : "Direct Download")
+                                  + (row.it.provider ? ("   •   " + row.it.provider) : "")
+                                  + "   •   "
                                   + (row.it.status === "downloading" && row.bytesDone > 0
                                      ? "Downloading model  " + root.fmtBytes(row.bytesDone) + (row.bytesTotal ? " / " + root.fmtBytes(row.bytesTotal) : "")
                                      : root.statusText(row.it))
