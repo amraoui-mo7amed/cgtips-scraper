@@ -111,7 +111,7 @@ Item {
                             }
 
                             Rectangle {
-                                width: 140
+                                width: 120
                                 height: 38
                                 radius: Theme.radiusSm
                                 color: Theme.primary
@@ -120,13 +120,43 @@ Item {
                                     anchors.centerIn: parent
                                     spacing: 6
                                     FaIcon {
-                                        icon: Icons.folderOpen
+                                        icon: Icons.folder
                                         size: 12
                                         iconColor: "white"
                                     }
                                     Text {
-                                        text: "Open in Finder"
+                                        text: "Change..."
                                         color: "white"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Bridge.chooseStorageDir(false)
+                                }
+                            }
+
+                            Rectangle {
+                                width: 130
+                                height: 38
+                                radius: Theme.radiusSm
+                                color: Theme.surfaceElevated
+                                border.color: Theme.border
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    FaIcon {
+                                        icon: Icons.folderOpen
+                                        size: 12
+                                        iconColor: Theme.textSecondary
+                                    }
+                                    Text {
+                                        text: Qt.platform.os === "windows" ? "Open Folder" : "Open in Finder"
+                                        color: Theme.textPrimary
                                         font.pixelSize: 11
                                         font.bold: true
                                     }
