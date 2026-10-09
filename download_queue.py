@@ -104,6 +104,12 @@ class DownloadQueue:
             return
         self._items = [i for i in data.get("items", []) if isinstance(i, dict) and i.get("link")]
         for it in self._items:
+            if not it.get("provider"):
+                url = it.get("gdrive_url") or it.get("download_url") or ""
+                if url:
+                    it["provider"] = detect_download_provider(url)
+                elif it.get("status") == "done":
+                    it["provider"] = "Google Drive"
             if it.get("status") == "downloading":
                 it["status"] = "paused"  # the app closed mid-download; its partial file is kept
             # Migrate articles without models from failed to no_model

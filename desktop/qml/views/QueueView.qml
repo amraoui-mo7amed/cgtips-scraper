@@ -68,6 +68,62 @@ Item {
         }
     }
 
+    function providerName(it) {
+        if (!it) return "Google Drive";
+        var p = it.provider || "";
+        if (!p && it.gdrive_url) {
+            var u = (it.gdrive_url || "").toLowerCase();
+            if (u.indexOf("fshare.vn") !== -1) p = "Fshare";
+            else if (u.indexOf("sharepoint.com") !== -1) p = "SharePoint";
+            else if (u.indexOf("drive.google.com") !== -1 || u.indexOf("google.com") !== -1) p = "Google Drive";
+            else p = "Direct Link";
+        }
+        if (!p) {
+            p = "Google Drive";
+        }
+        return p;
+    }
+
+    function providerBg(it) {
+        var p = (providerName(it) || "").toLowerCase();
+        if (p.indexOf("fshare") !== -1) return "#7F1D1D";
+        if (p.indexOf("sharepoint") !== -1) return "#0C4A6E";
+        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#1E3A8A";
+        return "#134E4A";
+    }
+
+    function providerBorder(it) {
+        var p = (providerName(it) || "").toLowerCase();
+        if (p.indexOf("fshare") !== -1) return "#EF4444";
+        if (p.indexOf("sharepoint") !== -1) return "#0284C7";
+        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#3B82F6";
+        return "#14B8A6";
+    }
+
+    function providerIcon(it) {
+        var p = (providerName(it) || "").toLowerCase();
+        if (p.indexOf("fshare") !== -1) return Icons.fire;
+        if (p.indexOf("sharepoint") !== -1) return Icons.cloud;
+        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return Icons.cloud;
+        return Icons.hdd;
+    }
+
+    function providerIconColor(it) {
+        var p = (providerName(it) || "").toLowerCase();
+        if (p.indexOf("fshare") !== -1) return "#FCA5A5";
+        if (p.indexOf("sharepoint") !== -1) return "#38BDF8";
+        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#60A5FA";
+        return "#2DD4BF";
+    }
+
+    function providerTextColor(it) {
+        var p = (providerName(it) || "").toLowerCase();
+        if (p.indexOf("fshare") !== -1) return "#FEE2E2";
+        if (p.indexOf("sharepoint") !== -1) return "#E0F2FE";
+        if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#DBEAFE";
+        return "#CCFBF1";
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20
@@ -221,7 +277,7 @@ Item {
                 readonly property bool showBar: it.status === "downloading" || (it.status === "paused" && bytesTotal > 0)
 
                 width: list.width - 10
-                height: 66
+                height: 68
                 radius: Theme.radiusMd
                 color: Theme.card
                 border.color: it.status === "downloading" ? Theme.primary : Theme.border
@@ -242,16 +298,49 @@ Item {
                             color: Theme.textPrimary; font.pixelSize: 12; font.bold: true
                             elide: Text.ElideRight; Layout.fillWidth: true
                         }
-                        Text {
-                            text: (row.it.category ? (row.it.category + " › " + row.it.subcategory) : "Direct Download")
-                                  + (row.it.provider ? ("   •   " + row.it.provider) : "")
-                                  + "   •   "
-                                  + (row.it.status === "downloading" && row.bytesDone > 0
-                                     ? "Downloading model  " + root.fmtBytes(row.bytesDone) + (row.bytesTotal ? " / " + root.fmtBytes(row.bytesTotal) : "")
-                                     : root.statusText(row.it))
-                            color: row.it.status === "failed" ? Theme.error : (row.it.status === "no_model" ? "#F59E0B" : Theme.textMuted)
-                            font.pixelSize: 10
-                            elide: Text.ElideRight; Layout.fillWidth: true
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            // Provider Badge (Google Drive / Fshare / SharePoint)
+                            Rectangle {
+                                visible: !!root.providerName(row.it)
+                                height: 18
+                                width: Math.max(22, queueProvBadgeRow.implicitWidth + 12)
+                                radius: 4
+                                color: root.providerBg(row.it)
+                                border.color: root.providerBorder(row.it)
+                                border.width: 1
+
+                                RowLayout {
+                                    id: queueProvBadgeRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    FaIcon {
+                                        icon: root.providerIcon(row.it)
+                                        size: 8
+                                        iconColor: root.providerIconColor(row.it)
+                                    }
+                                    Text {
+                                        text: root.providerName(row.it)
+                                        color: root.providerTextColor(row.it)
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: (row.it.category ? (row.it.category + " › " + row.it.subcategory) : "Direct Download")
+                                      + "   •   "
+                                      + (row.it.status === "downloading" && row.bytesDone > 0
+                                         ? "Downloading model  " + root.fmtBytes(row.bytesDone) + (row.bytesTotal ? " / " + root.fmtBytes(row.bytesTotal) : "")
+                                         : root.statusText(row.it))
+                                color: row.it.status === "failed" ? Theme.error : (row.it.status === "no_model" ? "#F59E0B" : Theme.textMuted)
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
                         }
                         Rectangle {
                             visible: row.showBar
