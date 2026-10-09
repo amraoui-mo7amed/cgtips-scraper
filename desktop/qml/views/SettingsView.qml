@@ -111,10 +111,10 @@ Item {
                             }
 
                             Rectangle {
-                                width: 120
+                                width: 140
                                 height: 38
                                 radius: Theme.radiusSm
-                                color: Theme.primary
+                                color: changeBtnMouse.containsMouse ? Theme.primaryHover : Theme.primary
 
                                 RowLayout {
                                     anchors.centerIn: parent
@@ -125,7 +125,7 @@ Item {
                                         iconColor: "white"
                                     }
                                     Text {
-                                        text: "Change..."
+                                        text: "Change Storage"
                                         color: "white"
                                         font.pixelSize: 11
                                         font.bold: true
@@ -133,7 +133,9 @@ Item {
                                 }
 
                                 MouseArea {
+                                    id: changeBtnMouse
                                     anchors.fill: parent
+                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: Bridge.chooseStorageDir(false)
                                 }

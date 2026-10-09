@@ -1208,6 +1208,7 @@ class AppBridge(QObject):
 
         self._start(task, _ok, _err)
 
+    @Slot()
     @Slot(bool)
     def chooseStorageDir(self, move_existing: bool = False):
         start = str(config.FEEDS_DIR)

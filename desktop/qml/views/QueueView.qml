@@ -216,6 +216,11 @@ Item {
                         enabled: (root.st.total || 0) > 0
                         onClicked: confirmClearModal.open()
                     }
+                    ActionButton {
+                        text: "Change Storage"
+                        icon: Icons.folder
+                        onClicked: Bridge.chooseStorageDir(false)
+                    }
                     Item { width: 12; height: 1 }
                     Repeater {
                         model: [

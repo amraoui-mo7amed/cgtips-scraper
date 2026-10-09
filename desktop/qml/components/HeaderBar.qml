@@ -110,15 +110,51 @@ Rectangle {
             onOpenQueueRequested: root.openQueueRequested()
         }
 
+        // Change Storage Button
+        Rectangle {
+            height: 36
+            implicitWidth: changeStorageRow.implicitWidth + 20
+            radius: Theme.radiusMd
+            color: changeStorageMouse.containsMouse ? Theme.primary : Theme.surfaceElevated
+            border.color: Theme.primary
+            border.width: 1
+
+            RowLayout {
+                id: changeStorageRow
+                anchors.centerIn: parent
+                spacing: 6
+                FaIcon {
+                    icon: Icons.folder
+                    size: 12
+                    iconColor: changeStorageMouse.containsMouse ? "white" : Theme.primaryLight
+                }
+                Text {
+                    text: "Change Storage"
+                    color: changeStorageMouse.containsMouse ? "white" : Theme.primaryLight
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+            }
+
+            MouseArea {
+                id: changeStorageMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: Bridge.chooseStorageDir(false)
+            }
+        }
+
         // Open Local Storage Button
         Rectangle {
-            width: 110
             height: 36
+            implicitWidth: storageRow.implicitWidth + 20
             radius: Theme.radiusMd
             color: storageMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2) : Theme.surfaceElevated
             border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.3)
 
             RowLayout {
+                id: storageRow
                 anchors.centerIn: parent
                 spacing: 6
                 FaIcon {
@@ -127,7 +163,7 @@ Rectangle {
                     iconColor: Theme.primaryLight
                 }
                 Text {
-                    text: "Storage"
+                    text: Qt.platform.os === "windows" ? "Open Folder" : "Open in Finder"
                     color: Theme.primaryLight
                     font.pixelSize: 11
                     font.bold: true
