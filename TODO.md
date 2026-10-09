@@ -33,5 +33,9 @@
         - Local Library cards
         - Download Queue list items
         - Direct Resolver results and action buttons
-
-
+- [x] Download from SharePoint (cgtips-my.sharepoint.com):
+    - Multiple download methods:
+        - Playwright interactive browser automation clicking the specific split download button (`<span data-automationid="splitbuttonprimary"><i data-icon-name="Download">`) and streaming authenticated download payload
+        - Authenticated HTTP streaming with FedAuth cookie tracking across 302 redirects
+        - System Curl CLI with session cookie jar
+    - Provider detection and visual badge styling (SharePoint blue `#0284C7` / `#0C4A6E`) across all views

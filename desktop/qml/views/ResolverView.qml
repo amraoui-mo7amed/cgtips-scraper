@@ -264,6 +264,7 @@ Item {
                                     icon: {
                                         var p = (Bridge.resolverResult.provider || "").toLowerCase();
                                         if (p.indexOf("fshare") !== -1) return Icons.fire;
+                                        if (p.indexOf("sharepoint") !== -1) return Icons.cloud;
                                         if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return Icons.cloud;
                                         return Icons.hdd;
                                     }
@@ -271,6 +272,7 @@ Item {
                                     iconColor: {
                                         var p = (Bridge.resolverResult.provider || "").toLowerCase();
                                         if (p.indexOf("fshare") !== -1) return "#EF4444";
+                                        if (p.indexOf("sharepoint") !== -1) return "#38BDF8";
                                         if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#3B82F6";
                                         return "#14B8A6";
                                     }

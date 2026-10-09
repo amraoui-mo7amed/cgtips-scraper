@@ -109,12 +109,14 @@ Rectangle {
                     color: {
                         var p = (root.itemData.provider || "").toLowerCase();
                         if (p.indexOf("fshare") !== -1) return "#7F1D1D";
+                        if (p.indexOf("sharepoint") !== -1) return "#0C4A6E";
                         if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#1E3A8A";
                         return "#134E4A";
                     }
                     border.color: {
                         var p = (root.itemData.provider || "").toLowerCase();
                         if (p.indexOf("fshare") !== -1) return "#EF4444";
+                        if (p.indexOf("sharepoint") !== -1) return "#0284C7";
                         if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#3B82F6";
                         return "#14B8A6";
                     }
@@ -128,6 +130,7 @@ Rectangle {
                             icon: {
                                 var p = (root.itemData.provider || "").toLowerCase();
                                 if (p.indexOf("fshare") !== -1) return Icons.fire;
+                                if (p.indexOf("sharepoint") !== -1) return Icons.cloud;
                                 if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return Icons.cloud;
                                 return Icons.hdd;
                             }
@@ -135,6 +138,7 @@ Rectangle {
                             iconColor: {
                                 var p = (root.itemData.provider || "").toLowerCase();
                                 if (p.indexOf("fshare") !== -1) return "#FCA5A5";
+                                if (p.indexOf("sharepoint") !== -1) return "#38BDF8";
                                 if (p.indexOf("drive") !== -1 || p.indexOf("gdrive") !== -1) return "#93C5FD";
                                 return "#5EEAD4";
                             }

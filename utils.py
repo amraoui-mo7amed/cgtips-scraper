@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+import urllib.parse
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup as bs
@@ -158,6 +159,8 @@ def detect_download_provider(url: Optional[str]) -> str:
         return "Google Drive"
     if "fshare.vn" in u:
         return "Fshare"
+    if "sharepoint.com" in u:
+        return "SharePoint"
     if "mediafire.com" in u:
         return "MediaFire"
     if "mega.nz" in u or "mega.io" in u:
@@ -170,7 +173,7 @@ def detect_download_provider(url: Optional[str]) -> str:
 
 
 def resolve_gdrive_from_locker(page, locker_url):
-    """Loads content locker page with Playwright and extracts Google Drive, Fshare, or mirror destination URL."""
+    """Loads content locker page with Playwright and extracts Google Drive, Fshare, SharePoint, or mirror destination URL."""
     try:
         page.goto(locker_url, timeout=30000, wait_until="domcontentloaded")
         page.wait_for_timeout(3500)
@@ -179,7 +182,7 @@ def resolve_gdrive_from_locker(page, locker_url):
         dl_url = page.evaluate("""() => {
             const btn = document.querySelector('.download_dem a.btn, a.btn-download, a#download-btn');
             if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-            const mirrors = ['drive.google.com', 'fshare.vn', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+            const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'mediafire.com', 'mega.nz', 'dropbox.com'];
             for (const a of document.querySelectorAll('a')) {
                 if (a.href && mirrors.some(m => a.href.includes(m))) {
                     return a.href;
@@ -194,7 +197,7 @@ def resolve_gdrive_from_locker(page, locker_url):
             dl_url = page.evaluate("""() => {
                 const btn = document.querySelector('.download_dem a.btn, a.btn-download');
                 if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-                const mirrors = ['drive.google.com', 'fshare.vn', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+                const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'mediafire.com', 'mega.nz', 'dropbox.com'];
                 const anyMirror = Array.from(document.querySelectorAll('a')).map(a => a.href).find(h => h && mirrors.some(m => h.includes(m)));
                 return anyMirror || null;
             }""")
@@ -947,6 +950,345 @@ def download_from_fshare(
     return None
 
 
+def _normalize_sharepoint_download_url(url: str) -> str:
+    """Ensures SharePoint sharing links have download=1 parameter."""
+    u = (url or "").strip()
+    if "download=1" in u:
+        return u
+    sep = "&" if "?" in u else "?"
+    return f"{u}{sep}download=1"
+
+
+def _extract_sharepoint_filename(cd: str, final_url: str, default: str = "sharepoint_model.rar") -> str:
+    """Parses model filename from Content-Disposition header or redirect URL path."""
+    if cd:
+        m = re.search(r"filename\*=utf-8''([^;\r\n]+)", cd, re.IGNORECASE)
+        if m:
+            try:
+                return urllib.parse.unquote(m.group(1)).strip().strip('"\'')
+            except Exception:
+                pass
+        m = re.search(r'filename="?([^";\r\n]+)"?', cd, re.IGNORECASE)
+        if m:
+            val = m.group(1).strip()
+            if "%" in val:
+                try:
+                    val = urllib.parse.unquote(val)
+                except Exception:
+                    pass
+            return val
+
+    # Fallback to URL path
+    if final_url:
+        path = urllib.parse.urlparse(final_url).path
+        name = path.split("/")[-1]
+        if name and "." in name:
+            try:
+                name = urllib.parse.unquote(name).strip()
+                if any(name.lower().endswith(ext) for ext in [".zip", ".rar", ".7z", ".skp"]):
+                    return name
+            except Exception:
+                pass
+    return default
+
+
+def _download_sharepoint_stream(
+    url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 1: Direct authenticated session stream with cookie persistence across 302 redirects."""
+    dl_url = _normalize_sharepoint_download_url(url)
+    if log_cb:
+        log_cb("  [SharePoint Method 1/3] Direct HTTP stream with session cookies...")
+
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+
+    try:
+        r = s.get(dl_url, stream=True, timeout=60, allow_redirects=True)
+        ct = r.headers.get("Content-Type", "").lower()
+        if r.status_code in (200, 206) and "text/html" not in ct:
+            filename = _extract_sharepoint_filename(r.headers.get("Content-Disposition", ""), r.url)
+            if log_cb:
+                log_cb(f"  [SharePoint] Streaming archive: {filename}")
+            return _stream_response_to_file(r, dest_path, filename, progress_cb, cancel_event)
+        elif "text/html" in ct and log_cb:
+            log_cb("  [SharePoint Stream] Received HTML page instead of binary payload")
+    except DownloadPaused:
+        raise
+    except Exception as e:
+        logger.debug("SharePoint stream error: %s", e)
+        if log_cb:
+            log_cb(f"  [SharePoint Stream] Error: {e}")
+    return None
+
+
+def _download_sharepoint_playwright(
+    page,
+    url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """
+    Method 1: Playwright browser interactive automation.
+    Navigates to the SharePoint page, clicks the exact download button element:
+    <span class="ms-Button-flexContainer flexContainer-53" data-automationid="splitbuttonprimary"><i data-icon-name="Download"...>
+    and streams the authenticated download payload.
+    """
+    if not page:
+        return None
+    if log_cb:
+        log_cb("  [SharePoint Method 1/3] Playwright browser: Interacting with download button...")
+
+    try:
+        # Navigate to SharePoint view page
+        page.goto(url, timeout=35000, wait_until="domcontentloaded")
+        page.wait_for_timeout(2500)
+
+        # Locate download button using explicit user selector hierarchy:
+        # 1. Exact split button container span
+        # 2. Exact download icon
+        # 3. Parent command button / commandBar items
+        selectors_to_check = [
+            '[data-automationid="splitbuttonprimary"]',
+            'i[data-icon-name="Download"]',
+            'button:has([data-automationid="splitbuttonprimary"])',
+            'button:has(i[data-icon-name="Download"])',
+            '#downloadCommand',
+            '[data-automation-id="downloadCommand"]',
+            'button[aria-label*="Download" i]',
+            'button[name*="Download" i]',
+        ]
+
+        found_selector = None
+        for sel in selectors_to_check:
+            try:
+                el = page.wait_for_selector(sel, state="visible", timeout=3000)
+                if el:
+                    found_selector = sel
+                    break
+            except Exception:
+                continue
+
+        if not found_selector:
+            for sel in selectors_to_check:
+                if page.query_selector(sel):
+                    found_selector = sel
+                    break
+
+        if log_cb and found_selector:
+            log_cb(f"  [SharePoint Browser] Download button ready ({found_selector})")
+
+        with page.expect_download(timeout=35000) as dl_event:
+            clicked = False
+            try:
+                clicked = page.evaluate('''() => {
+                    const split = document.querySelector('[data-automationid="splitbuttonprimary"]')
+                        || document.querySelector('i[data-icon-name="Download"]');
+                    if (split) {
+                        const btn = split.closest('button, [role="button"]') || split;
+                        btn.click();
+                        return true;
+                    }
+                    const cmd = document.querySelector('#downloadCommand, [data-automation-id="downloadCommand"]');
+                    if (cmd) {
+                        cmd.click();
+                        return true;
+                    }
+                    return false;
+                }''')
+            except Exception:
+                pass
+
+            if not clicked:
+                target = page.locator(found_selector or '[data-automationid="splitbuttonprimary"]').first
+                target.click()
+
+        dl = dl_event.value
+        filename = dl.suggested_filename or f"sharepoint_model_{int(time.time())}.rar"
+        dl_url = getattr(dl, "url", None)
+
+        if log_cb:
+            log_cb(f"  [SharePoint Browser] Captured download trigger: {filename}")
+
+        # Stream directly using authenticated browser session cookies for real-time progress callbacks
+        cookies = {}
+        try:
+            cookies = {c["name"]: c["value"] for c in page.context.cookies()}
+        except Exception:
+            pass
+
+        if dl_url and cookies:
+            try:
+                s = requests.Session()
+                s.cookies.update(cookies)
+                s.headers.update({
+                    "User-Agent": USER_AGENT,
+                    "Accept": "*/*",
+                    "Referer": url,
+                })
+                r = s.get(dl_url, stream=True, timeout=60)
+                ct = r.headers.get("Content-Type", "").lower()
+                if r.status_code in (200, 206) and "text/html" not in ct:
+                    if log_cb:
+                        log_cb(f"  [SharePoint Stream] Streaming {filename} with progress...")
+                    out_path = _stream_response_to_file(r, dest_path, filename, progress_cb, cancel_event)
+                    if out_path and Path(out_path).exists() and Path(out_path).stat().st_size > 5000:
+                        if log_cb:
+                            log_cb(f"  [SharePoint Browser] ✓ Successfully downloaded: {filename}")
+                        return out_path
+            except DownloadPaused:
+                raise
+            except Exception as stream_err:
+                logger.debug("SharePoint stream with browser cookies failed: %s", stream_err)
+
+        # Fallback to direct Playwright save_as
+        target_file = dest_path / filename
+        dl.save_as(str(target_file))
+        if target_file.exists() and target_file.stat().st_size > 5000:
+            if log_cb:
+                log_cb(f"  [SharePoint Browser] ✓ Saved file: {filename}")
+            return str(target_file)
+
+    except DownloadPaused:
+        raise
+    except Exception as e:
+        logger.debug("SharePoint Playwright download error: %s", e)
+        if log_cb:
+            log_cb(f"  [SharePoint Browser] Error: {e}")
+    return None
+
+
+def _download_sharepoint_curl(
+    url: str,
+    dest_path: Path,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """Method 3: System Curl CLI with session cookiejar."""
+    if not shutil.which("curl"):
+        return None
+    dl_url = _normalize_sharepoint_download_url(url)
+    if log_cb:
+        log_cb("  [SharePoint Method 3/3] System Curl CLI with session cookiejar...")
+
+    cookie_file = dest_path / f".sp_cookie_{threading.get_ident()}.txt"
+    temp_out = dest_path / f".sp_temp_{threading.get_ident()}.bin"
+    try:
+        cmd = [
+            "curl", "-s", "-L",
+            "-c", str(cookie_file),
+            "-b", str(cookie_file),
+            "-A", USER_AGENT,
+            "--max-time", "600",
+            dl_url,
+            "-o", str(temp_out),
+        ]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=620)
+        if temp_out.exists() and temp_out.stat().st_size > 10000:
+            with open(temp_out, "rb") as f:
+                head = f.read(512)
+            if not head.startswith(b"<!DOCTYPE") and not head.startswith(b"<html"):
+                final_name = f"sharepoint_model_{int(time.time())}.rar"
+                final_path = dest_path / final_name
+                os.replace(temp_out, final_path)
+                if log_cb:
+                    log_cb(f"  [SharePoint Curl] ✓ Successfully downloaded: {final_name}")
+                return str(final_path)
+    except Exception as e:
+        logger.debug("SharePoint curl error: %s", e)
+    finally:
+        cookie_file.unlink(missing_ok=True)
+        temp_out.unlink(missing_ok=True)
+    return None
+
+
+def download_from_sharepoint(
+    page_or_url,
+    sharepoint_url_or_dest = None,
+    dest_path = None,
+    progress_cb: Optional[Callable] = None,
+    log_cb: Optional[Callable] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> Optional[str]:
+    """
+    Downloads model archive from cgtips-my.sharepoint.com (SharePoint / OneDrive for Business):
+    1. Playwright interactive browser automation clicking the download button
+       (<span data-automationid="splitbuttonprimary"><i data-icon-name="Download">)
+    2. Authenticated HTTP session stream with automatic FedAuth cookie tracking across 302 redirects
+    3. System Curl CLI engine with cookie jar
+
+    Supports calling as:
+        download_from_sharepoint(page, url, dest_path, ...)
+    or:
+        download_from_sharepoint(url, dest_path, ...)
+    """
+    if isinstance(page_or_url, (str, Path)) and (dest_path is None or not isinstance(dest_path, (str, Path))):
+        page = None
+        sp_url = str(page_or_url)
+        dest_path = Path(sharepoint_url_or_dest)
+    else:
+        page = page_or_url
+        sp_url = str(sharepoint_url_or_dest)
+        dest_path = Path(dest_path)
+
+    dest_path.mkdir(parents=True, exist_ok=True)
+    if log_cb:
+        log_cb(f"Starting SharePoint download pipeline for: {sp_url[:75]}...")
+
+    # Setup temporary browser if page not passed
+    owns_page = False
+    browser_cleanup = None
+    if page is None:
+        try:
+            from browser_manager import BrowserManager
+            from config import HEADLESS
+            bm = BrowserManager(headless=HEADLESS)
+            p_ctx, ctx = bm.get_context()
+            page = ctx.new_page()
+            owns_page = True
+            browser_cleanup = lambda: (ctx.close(), p_ctx.stop())
+        except Exception as bm_err:
+            logger.debug("Could not spawn standalone browser context for SharePoint: %s", bm_err)
+
+    try:
+        # Method 1: Playwright interactive browser automation with download button click
+        if page:
+            res = _download_sharepoint_playwright(page, sp_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+            if res:
+                return res
+
+        # Method 2: Direct HTTP stream
+        res = _download_sharepoint_stream(sp_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+
+        # Method 3: System Curl
+        res = _download_sharepoint_curl(sp_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+
+        if log_cb:
+            log_cb("  ✗ All SharePoint download methods attempted")
+        return None
+    finally:
+        if owns_page and browser_cleanup:
+            try:
+                browser_cleanup()
+            except Exception:
+                pass
+
+
 def _download_from_gdrive(
     page,
     gdrive_url,
@@ -958,6 +1300,7 @@ def _download_from_gdrive(
     """
     Downloads model archive using all available methods in sequence without prompting the user:
     0. Fshare Multi-Method Pipeline (Guest API, Playwright, yt-dlp, Cookie Handshake)
+    0.1 SharePoint Multi-Method Pipeline (HTTP Session, Playwright Interception, Curl)
     1. Direct HTTP CloudScraper Stream
     2. Google Drive API Quota Bypass (if credentials present)
     3. Playwright Browser Interactive Automation
@@ -971,6 +1314,13 @@ def _download_from_gdrive(
     # 0. Fshare.vn download pipeline
     if "fshare.vn" in gdrive_url:
         res = download_from_fshare(page, gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        if res:
+            return res
+        return None
+
+    # 0.1 SharePoint / OneDrive download pipeline
+    if "sharepoint.com" in gdrive_url:
+        res = download_from_sharepoint(page, gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
         return None
