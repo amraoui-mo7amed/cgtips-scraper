@@ -25,7 +25,9 @@ from utils import (
     extract_download_url,
     download_from_locker,
     resolve_gdrive_from_locker,
+    download_model,
     _download_from_gdrive,
+    decide_download_method,
     detect_download_provider,
     download_from_fshare,
 )
@@ -230,6 +232,69 @@ def resolve_and_download_single_article(
     }
 
     try:
+        # 0. Check if input URL is already a direct storage / hosting link
+        norm_url = (article_url or "").strip()
+        if not norm_url.startswith("http"):
+            norm_url = "https://" + norm_url
+
+        method = decide_download_method(norm_url)
+        if method in ("fshare", "sharepoint", "onedrive", "gdrive"):
+            provider = detect_download_provider(norm_url)
+            _log(f"Direct download link detected ({provider}): {norm_url}")
+            result["gdrive_url"] = norm_url
+            result["provider"] = provider
+            title = (title_hint or "").strip()
+            if not title:
+                if method == "fshare":
+                    m_code = re.search(r"/file/([a-zA-Z0-9]+)", norm_url)
+                    title = f"Fshare_{m_code.group(1)}" if m_code else "Fshare_Model"
+                elif method in ("sharepoint", "onedrive"):
+                    title = f"SharePoint_Model_{int(time.time())}"
+                else:
+                    title = f"Model_{int(time.time())}"
+            result["title"] = title
+            if target_article_dir:
+                article_folder = Path(target_article_dir)
+            else:
+                safe_title = sanitize(title)[:80].rstrip(" .")
+                article_folder = dest_dir / safe_title
+            result["folder"] = str(article_folder)
+            article_folder.mkdir(parents=True, exist_ok=True)
+            write_meta(article_folder, article_url=norm_url, title=title)
+
+            if download_model:
+                model_folder = article_folder / "model"
+                model_folder.mkdir(parents=True, exist_ok=True)
+                _log(f"Downloading model archive via {provider}...")
+                try:
+                    model_file = download_model(
+                        page, norm_url, model_folder, progress_cb=progress_cb, log_cb=_log, cancel_event=cancel_event
+                    )
+                except DownloadPaused as paused:
+                    paused.gdrive_url, paused.folder = norm_url, str(article_folder)
+                    _log("Model download paused")
+                    raise
+                result["model_file"] = model_file
+                if model_file:
+                    real_name = Path(model_file).stem
+                    if real_name and title.startswith(("Fshare_", "SharePoint_", "Model_")):
+                        result["title"] = real_name
+                    _log(f"Model saved: {Path(model_file).name} ({os.path.getsize(model_file)} bytes)")
+                    result["success"] = True
+                    write_meta(
+                        article_folder,
+                        article_url=norm_url,
+                        title=result["title"],
+                        gdrive_url=norm_url,
+                        model_file=Path(model_file).name,
+                        download_provider=provider,
+                    )
+                else:
+                    _log(f"Model download failed ({provider})")
+            else:
+                result["success"] = True
+            return result
+
         # 1. Load article page
         _log("Fetching article page...")
         page.goto(article_url, timeout=30000, wait_until="domcontentloaded")

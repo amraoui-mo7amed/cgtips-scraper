@@ -29,7 +29,14 @@ class BrowserManager:
             candidates.append(("Chrome (custom)", CHROME_PATH))
 
         # Platform-specific standard locations (optional checks)
-        if sys.platform == "win32":
+        if sys.platform == "darwin":
+            mac_chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            mac_brave = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+            if os.path.isfile(mac_brave):
+                candidates.append(("Brave (macOS)", mac_brave))
+            if os.path.isfile(mac_chrome):
+                candidates.append(("Chrome (macOS)", mac_chrome))
+        elif sys.platform == "win32":
             local_appdata = os.environ.get("LOCALAPPDATA", "")
             prog_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
             win_brave = os.path.join(local_appdata, r"BraveSoftware\Brave-Browser\Application\brave.exe")

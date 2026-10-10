@@ -150,17 +150,45 @@ def extract_download_url(article_url, retries=3):
     return None
 
 
+def decide_download_method(url: Optional[str]) -> str:
+    """
+    Decides and returns the download method identifier for a given target URL:
+    - 'gdrive': Google Drive (drive.google.com, docs.google.com)
+    - 'fshare': Fshare.vn (fshare.vn)
+    - 'sharepoint': Microsoft SharePoint (sharepoint.com)
+    - 'onedrive': Microsoft OneDrive (1drv.ms, onedrive.live.com, onedrive.com)
+    - 'direct': Direct HTTP links / mirrors (MediaFire, Mega, Dropbox, or generic direct HTTP/HTTPS)
+    """
+    if not url:
+        return "direct"
+    u = str(url).lower()
+    if "fshare.vn" in u:
+        return "fshare"
+    if "sharepoint.com" in u:
+        return "sharepoint"
+    if "1drv.ms" in u or "onedrive.live.com" in u or "onedrive.com" in u:
+        return "onedrive"
+    if "drive.google.com" in u or "docs.google.com" in u:
+        return "gdrive"
+    if "google.com" in u and ("id=" in u or "/file/d/" in u or "export=download" in u):
+        return "gdrive"
+    return "direct"
+
+
 def detect_download_provider(url: Optional[str]) -> str:
-    """Identifies the hosting platform / download provider from a URL."""
+    """Identifies the human-readable hosting platform / download provider from a URL."""
     if not url:
         return ""
-    u = str(url).lower()
-    if "drive.google.com" in u or "docs.google.com" in u:
+    m = decide_download_method(url)
+    if m == "gdrive":
         return "Google Drive"
-    if "fshare.vn" in u:
+    if m == "fshare":
         return "Fshare"
-    if "sharepoint.com" in u:
+    if m == "sharepoint":
         return "SharePoint"
+    if m == "onedrive":
+        return "OneDrive"
+    u = str(url).lower()
     if "mediafire.com" in u:
         return "MediaFire"
     if "mega.nz" in u or "mega.io" in u:
@@ -182,7 +210,7 @@ def resolve_gdrive_from_locker(page, locker_url):
         dl_url = page.evaluate("""() => {
             const btn = document.querySelector('.download_dem a.btn, a.btn-download, a#download-btn');
             if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-            const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+            const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'onedrive.live.com', '1drv.ms', 'mediafire.com', 'mega.nz', 'dropbox.com'];
             for (const a of document.querySelectorAll('a')) {
                 if (a.href && mirrors.some(m => a.href.includes(m))) {
                     return a.href;
@@ -197,7 +225,7 @@ def resolve_gdrive_from_locker(page, locker_url):
             dl_url = page.evaluate("""() => {
                 const btn = document.querySelector('.download_dem a.btn, a.btn-download');
                 if (btn && btn.href && btn.href.startsWith('http')) return btn.href;
-                const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'mediafire.com', 'mega.nz', 'dropbox.com'];
+                const mirrors = ['drive.google.com', 'fshare.vn', 'sharepoint.com', 'onedrive.live.com', '1drv.ms', 'mediafire.com', 'mega.nz', 'dropbox.com'];
                 const anyMirror = Array.from(document.querySelectorAll('a')).map(a => a.href).find(h => h && mirrors.some(m => h.includes(m)));
                 return anyMirror || null;
             }""")
@@ -637,6 +665,7 @@ def _download_fshare_guest(
     if log_cb:
         log_cb("  [Fshare Method 1/4] Guest API: Fetching session & token...")
 
+    target_url = fshare_url if fshare_url.startswith("http") else f"https://{fshare_url}"
     clean_url = f"https://www.fshare.vn/file/{linkcode}"
     s = cloudscraper.create_scraper()
     s.headers.update({
@@ -648,7 +677,7 @@ def _download_fshare_guest(
         if cancel_event and cancel_event.is_set():
             raise DownloadPaused()
 
-        r1 = s.get(clean_url, timeout=30)
+        r1 = s.get(target_url, timeout=30)
         r1.raise_for_status()
         soup = bs(r1.text, "html.parser")
         form = soup.find("form", id="form-download")
@@ -712,7 +741,13 @@ def _download_fshare_guest(
         if log_cb:
             log_cb("  [Fshare Method 1/4] ✓ CDN URL acquired, streaming model file...")
 
-        r4 = s.get(cdn_url, stream=True, timeout=60)
+        # Fshare CDN rejects requests containing a Referer header with HTTP 503.
+        # Direct stream without Referer header.
+        cdn_headers = {
+            "User-Agent": FEED_UA,
+            "Accept": "*/*",
+        }
+        r4 = requests.get(cdn_url, headers=cdn_headers, stream=True, timeout=60)
         r4.raise_for_status()
 
         return _stream_response_to_file(r4, dest_path, fallback_name, progress_cb, cancel_event)
@@ -749,6 +784,9 @@ def _download_fshare_playwright(
         dl_info = page.evaluate("""() => {
             const chk = document.querySelector("#policy-checkbox");
             if (chk) chk.checked = true;
+            if (typeof $ !== "undefined") {
+                $("#policy-checkbox").prop("checked", true);
+            }
             const btn = document.querySelector("#download-free, .btn_guest_free_download, .btn-download-free");
             if (!btn) return {found: false};
             if (typeof downloadFile === "function") {
@@ -785,24 +823,45 @@ def _download_fshare_playwright(
                 raise DownloadPaused()
             page.wait_for_timeout(2000)
 
-        with page.expect_download(timeout=25000) as dl_event:
-            page.evaluate("""() => {
-                const retryBtn = document.querySelector(".cus_down_end_countdown a, .download-btn, #download-btn");
-                if (retryBtn) retryBtn.click();
-                if (typeof afterWait_New === "function" && typeof backupDownLink !== "undefined" && backupDownLink) {
-                    window.location.href = backupDownLink;
-                }
-            }""")
+        # Check if direct CDN redirect link was captured into window.backupDownLink
+        backup_link = page.evaluate("() => typeof backupDownLink !== 'undefined' ? backupDownLink : null")
+        if backup_link and str(backup_link).startswith("http"):
+            try:
+                r_redir = requests.get(str(backup_link), allow_redirects=False, timeout=30)
+                cdn_loc = r_redir.headers.get("Location") if r_redir.status_code in (301, 302) else None
+                if cdn_loc:
+                    cdn_headers = {"User-Agent": FEED_UA, "Accept": "*/*"}
+                    r_stream = requests.get(cdn_loc, headers=cdn_headers, stream=True, timeout=60)
+                    if r_stream.status_code in (200, 206):
+                        fallback = Path(fshare_url.rstrip("/").split("?")[0]).name + ".rar"
+                        res_file = _stream_response_to_file(r_stream, dest_path, fallback, progress_cb, cancel_event)
+                        if res_file:
+                            if log_cb:
+                                log_cb(f"  [Fshare Method 2/4] ✓ Playwright CDN stream completed: {Path(res_file).name}")
+                            return res_file
+            except Exception as stream_err:
+                logger.debug("Playwright backupDownLink stream fallback error: %s", stream_err)
 
-        dl = dl_event.value
-        name = dl.suggested_filename or f"fshare_model_{int(time.time())}.rar"
-        target_file = dest_path / name
-        dl.save_as(str(target_file))
+        try:
+            with page.expect_download(timeout=25000) as dl_event:
+                page.evaluate("""() => {
+                    const retryBtn = document.querySelector(".cus_down_end_countdown a, .download-btn, #download-btn");
+                    if (retryBtn) retryBtn.click();
+                    if (typeof afterWait_New === "function" && typeof backupDownLink !== "undefined" && backupDownLink) {
+                        window.location.href = backupDownLink;
+                    }
+                }""")
+            dl = dl_event.value
+            name = dl.suggested_filename or f"fshare_model_{int(time.time())}.rar"
+            target_file = dest_path / name
+            dl.save_as(str(target_file))
 
-        if target_file.exists() and target_file.stat().st_size > 5000:
-            if log_cb:
-                log_cb(f"  [Fshare Method 2/4] ✓ Playwright download completed: {name}")
-            return str(target_file)
+            if target_file.exists() and target_file.stat().st_size > 5000:
+                if log_cb:
+                    log_cb(f"  [Fshare Method 2/4] ✓ Playwright download completed: {name}")
+                return str(target_file)
+        except Exception:
+            pass
 
     except DownloadPaused:
         raise
@@ -923,27 +982,48 @@ def download_from_fshare(
     if log_cb:
         log_cb(f"Starting Fshare download pipeline for: {fshare_url}")
 
-    # Method 1: Guest API
+    # Method 1: Guest API (Fast HTTP session with countdown & direct CDN stream)
     res = _download_fshare_guest(fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
     if res:
         return res
 
-    # Method 2: Playwright Interactive Automation
+    # Method 2: Playwright Interactive Automation (if caller provided a page)
     if page:
         res = _download_fshare_playwright(page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
 
-    # Method 3: yt-dlp
+    # Method 3: yt-dlp CLI / Engine
     res = _download_fshare_ytdlp(fshare_url, dest_path, log_cb=log_cb, cancel_event=cancel_event)
     if res:
         return res
 
-    # Method 4: Browser Session Cookie Handshake
+    # Method 4: Browser Session Cookie Handshake (if caller provided a page)
     if page:
         res = _download_fshare_cookies(page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
+
+    # Method 5: Standalone Playwright browser fallback if caller did not supply a page
+    if not page:
+        try:
+            from browser_manager import BrowserManager
+            from config import HEADLESS
+            bm = BrowserManager(headless=HEADLESS)
+            p_ctx, ctx = bm.get_context()
+            try:
+                standalone_page = ctx.new_page()
+                res = _download_fshare_playwright(standalone_page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+                if res:
+                    return res
+                res = _download_fshare_cookies(standalone_page, fshare_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+                if res:
+                    return res
+            finally:
+                ctx.close()
+                p_ctx.stop()
+        except Exception as bm_err:
+            logger.debug("Standalone browser fallback error for Fshare: %s", bm_err)
 
     if log_cb:
         log_cb("  ✗ All Fshare download methods attempted")
@@ -1289,52 +1369,56 @@ def download_from_sharepoint(
                 pass
 
 
-def _download_from_gdrive(
+def download_model(
     page,
-    gdrive_url,
-    dest_path,
+    target_url: str,
+    dest_path: Path,
     progress_cb: Optional[Callable] = None,
     log_cb: Optional[Callable] = None,
     cancel_event: Optional[threading.Event] = None,
-):
+) -> Optional[str]:
     """
-    Downloads model archive using all available methods in sequence without prompting the user:
-    0. Fshare Multi-Method Pipeline (Guest API, Playwright, yt-dlp, Cookie Handshake)
-    0.1 SharePoint Multi-Method Pipeline (HTTP Session, Playwright Interception, Curl)
-    1. Direct HTTP CloudScraper Stream
-    2. Google Drive API Quota Bypass (if credentials present)
-    3. Playwright Browser Interactive Automation
-    4. Browser Session Cookie Handshake
-    5. System Curl Engine
-    6. Generic Direct URL Downloader (for non-GDrive mirrors)
+    Intelligent Multi-Provider Model Download Dispatcher / Decision Engine:
+    Decides and routes to the appropriate download pipeline based on URL pattern matching:
+    1. Fshare (fshare.vn) -> download_from_fshare
+    2. SharePoint / OneDrive (sharepoint.com, onedrive.live.com, 1drv.ms) -> download_from_sharepoint
+    3. Google Drive (drive.google.com, docs.google.com) -> Multi-tier Google Drive pipeline
+    4. Direct HTTP Mirror (Mediafire, Mega, Dropbox, or generic direct HTTP/HTTPS) -> _download_direct_url
     """
     dest_path = Path(dest_path)
     dest_path.mkdir(parents=True, exist_ok=True)
 
-    # 0. Fshare.vn download pipeline
-    if "fshare.vn" in gdrive_url:
-        res = download_from_fshare(page, gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+    method = decide_download_method(target_url)
+    provider_name = detect_download_provider(target_url)
+
+    if log_cb:
+        log_cb(f"  [Decision Engine] Identified provider: {provider_name} ({method}) for {str(target_url)[:70]}...")
+
+    # Route 1: Fshare.vn download pipeline
+    if method == "fshare":
+        res = download_from_fshare(page, target_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
         return None
 
-    # 0.1 SharePoint / OneDrive download pipeline
-    if "sharepoint.com" in gdrive_url:
-        res = download_from_sharepoint(page, gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+    # Route 2: SharePoint / OneDrive download pipeline
+    if method in ("sharepoint", "onedrive"):
+        res = download_from_sharepoint(page, target_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
         return None
 
-    # 1. Generic non-GDrive URL check (Mediafire, Dropbox, Mega, direct CDN)
-    if "drive.google.com" not in gdrive_url and "google.com" not in gdrive_url:
-        res = _download_direct_url(gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+    # Route 3: Generic non-GDrive URL check (Mediafire, Dropbox, Mega, direct CDN)
+    if method != "gdrive":
+        res = _download_direct_url(target_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
         if res:
             return res
+        return None
 
-    # 2. Extract Google Drive file_id
-    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", gdrive_url) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", gdrive_url)
+    # Route 4: Google Drive pipeline
+    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", target_url) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", target_url)
     if not m:
-        return _download_direct_url(gdrive_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
+        return _download_direct_url(target_url, dest_path, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event)
     file_id = m.group(1)
 
     # Setup temporary browser if page not passed
@@ -1429,3 +1513,7 @@ def _download_from_gdrive(
                 browser_cleanup()
             except Exception:
                 pass
+
+
+# Alias for backwards compatibility
+_download_from_gdrive = download_model
