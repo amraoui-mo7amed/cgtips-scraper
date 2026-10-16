@@ -508,8 +508,17 @@ class ScraperService:
     def history_count(self) -> int:
         return history.count()
 
+    def sync_history(self, library_items: Optional[List[Dict[str, Any]]] = None, prune_missing: bool = True) -> Dict[str, int]:
+        if library_items is None:
+            library_items = library_manager.scan_library().get("items", [])
+        return history.sync_with_library(library_items, prune_missing=prune_missing)
+
     def import_library(self, paths: List[str], move: bool = False, log_cb=None, progress_cb=None) -> Dict[str, Any]:
         return library_manager.import_paths(paths, move=move, log_cb=log_cb, progress_cb=progress_cb)
+
+    def get_flash_drives(self) -> List[Dict[str, Any]]:
+        from .copy_manager import get_connected_flash_drives
+        return get_connected_flash_drives()
 
     def get_system_status(self) -> Dict[str, Any]:
         """Returns direct scraper status and disk metrics."""

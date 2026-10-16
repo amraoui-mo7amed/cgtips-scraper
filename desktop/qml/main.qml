@@ -131,6 +131,9 @@ ApplicationWindow {
 
                 QueueView {
                     id: queueView
+                    onOpenMissingModelsRequested: function() {
+                        batchDownloadModal.open("all", "", "", "", "")
+                    }
                 }
 
                 LibraryView {

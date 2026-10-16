@@ -9,6 +9,8 @@ import ".."
 Item {
     id: root
 
+    signal openMissingModelsRequested()
+
     readonly property var st: Bridge.queueStats || ({})
     readonly property var prog: Bridge.queueProgress || ({})
     property string filter: "all"   // all | waiting | done | no_model | failed
@@ -216,6 +218,12 @@ Item {
                         icon: Icons.trash
                         enabled: (root.st.total || 0) > 0
                         onClicked: confirmClearModal.open()
+                    }
+                    ActionButton {
+                        text: "Missing Models" + (Bridge.missingModelsCount > 0 ? " (" + Bridge.missingModelsCount + ")" : "")
+                        icon: Icons.exclamationTriangle
+                        visible: true
+                        onClicked: root.openMissingModelsRequested()
                     }
                     ActionButton {
                         text: "Change Storage"

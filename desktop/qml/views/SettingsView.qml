@@ -170,6 +170,38 @@ Item {
                                     onClicked: Bridge.openFolder("")
                                 }
                             }
+
+                            Rectangle {
+                                width: 140
+                                height: 38
+                                radius: Theme.radiusSm
+                                color: importBtnMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Theme.surfaceElevated
+                                border.color: Theme.border
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    FaIcon {
+                                        icon: Icons.fileImport
+                                        size: 12
+                                        iconColor: Theme.primaryLight
+                                    }
+                                    Text {
+                                        text: "Import Folder..."
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: importBtnMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Bridge.importLibraryFolder()
+                                }
+                            }
                         }
                     }
 
@@ -1573,6 +1605,38 @@ Item {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: Bridge.clearCache("history")
+                            }
+                        }
+
+                        Rectangle {
+                            height: 38
+                            Layout.fillWidth: true
+                            radius: Theme.radiusSm
+                            color: syncHistoryMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Theme.surfaceElevated
+                            border.color: Theme.border
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                FaIcon {
+                                    icon: Icons.sync
+                                    size: 11
+                                    iconColor: Theme.primaryLight
+                                }
+                                Text {
+                                    text: "Sync History with Disk"
+                                    color: Theme.primaryLight
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: syncHistoryMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Bridge.syncHistoryFromDisk(true)
                             }
                         }
 

@@ -19,6 +19,7 @@ Rectangle {
     property string selectedArticleFolder: ""
     property string selectedArticleTitle: ""
     property bool includeClientAgent: true
+    property var selectedDrivePaths: []
 
     Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
 
@@ -36,12 +37,87 @@ Rectangle {
         }
     }
 
+    function isDriveSelected(path) {
+        if (!path || !root.selectedDrivePaths) return false;
+        return root.selectedDrivePaths.indexOf(path) !== -1;
+    }
+
+    function toggleDrive(path) {
+        if (!path) return;
+        var list = (root.selectedDrivePaths || []).slice();
+        var idx = list.indexOf(path);
+        if (idx >= 0) {
+            list.splice(idx, 1);
+        } else {
+            list.push(path);
+        }
+        root.selectedDrivePaths = list;
+    }
+
+    function syncDrivesList() {
+        var flash = Bridge.flashDrives || [];
+        var custom = Bridge.copyDestinations || [];
+        var current = (root.selectedDrivePaths || []).slice();
+
+        if (current.length === 0) {
+            var allDrives = [];
+            for (var i = 0; i < flash.length; i++) {
+                if (flash[i] && flash[i].path && allDrives.indexOf(flash[i].path) === -1) {
+                    allDrives.push(flash[i].path);
+                }
+            }
+            for (var j = 0; j < custom.length; j++) {
+                if (custom[j] && allDrives.indexOf(custom[j]) === -1) {
+                    allDrives.push(custom[j]);
+                }
+            }
+            root.selectedDrivePaths = allDrives;
+        } else {
+            var valid = {};
+            for (var f = 0; f < flash.length; f++) {
+                if (flash[f] && flash[f].path) valid[flash[f].path] = true;
+            }
+            for (var c = 0; c < custom.length; c++) {
+                if (custom[c]) valid[custom[c]] = true;
+            }
+            var kept = [];
+            for (var k = 0; k < current.length; k++) {
+                if (valid[current[k]]) {
+                    kept.push(current[k]);
+                }
+            }
+            if (kept.length === 0 && flash.length > 0) {
+                for (var m = 0; m < flash.length; m++) {
+                    if (flash[m] && flash[m].path) kept.push(flash[m].path);
+                }
+            }
+            root.selectedDrivePaths = kept;
+        }
+    }
+
+    Connections {
+        target: Bridge
+        function onFlashDrivesChanged() {
+            if (root.opacity > 0) {
+                root.syncDrivesList();
+            }
+        }
+        function onCopyDestinationsChanged() {
+            if (root.opacity > 0) {
+                root.syncDrivesList();
+            }
+        }
+    }
+
     function open(scope, cat, sub, articleFolder, articleTitle) {
         if (scope) root.selectedScope = scope;
         if (cat) root.selectedCategory = cat;
         if (sub) root.selectedSubcategory = sub;
         if (articleFolder) root.selectedArticleFolder = articleFolder;
         if (articleTitle) root.selectedArticleTitle = articleTitle;
+
+        Bridge.refreshFlashDrives();
+        root.syncDrivesList();
 
         // Auto-select category if none
         if (!root.selectedCategory) {
@@ -550,16 +626,56 @@ Rectangle {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    spacing: 8
                     Text {
-                        text: "DESTINATION DISKS / FOLDERS (" + Bridge.copyDestinations.length + ")"
+                        text: "TARGET FLASH DRIVES & DESTINATIONS (" + root.selectedDrivePaths.length + " SELECTED)"
                         color: Theme.textMuted
                         font.pixelSize: 10
                         font.bold: true
                     }
                     Item { Layout.fillWidth: true }
 
+                    // Refresh / Scan Drives Button
                     Rectangle {
-                        width: 140
+                        width: 106
+                        height: 28
+                        radius: Theme.radiusSm
+                        color: scanDrivesMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Theme.surfaceElevated
+                        border.color: Theme.border
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 5
+                            FaIcon {
+                                icon: Icons.sync
+                                size: 10
+                                iconColor: Theme.primaryLight
+                            }
+                            Text {
+                                text: "Scan Drives"
+                                color: Theme.textPrimary
+                                font.pixelSize: 10
+                                font.bold: true
+                            }
+                        }
+
+                        MouseArea {
+                            id: scanDrivesMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            enabled: !Bridge.isCopying
+                            onClicked: {
+                                Bridge.refreshFlashDrives();
+                                root.syncDrivesList();
+                            }
+                        }
+                    }
+
+                    // Add Destination Folder Button
+                    Rectangle {
+                        width: 110
                         height: 28
                         radius: Theme.radiusSm
                         color: addDiskMouse.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25) : Theme.surfaceElevated
@@ -568,14 +684,14 @@ Rectangle {
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 6
+                            spacing: 5
                             FaIcon {
                                 icon: Icons.plus
                                 size: 10
                                 iconColor: Theme.primaryLight
                             }
                             Text {
-                                text: "Add Destination Disk"
+                                text: "+ Add Folder"
                                 color: Theme.primaryLight
                                 font.pixelSize: 10
                                 font.bold: true
@@ -596,64 +712,225 @@ Rectangle {
                 // Disks List Box
                 Rectangle {
                     Layout.fillWidth: true
-                    height: Math.min(Math.max(Bridge.copyDestinations.length * 36 + 12, 54), 120)
+                    height: 150
                     radius: Theme.radiusSm
                     color: Theme.card
                     border.color: Theme.border
                     clip: true
 
-                    // Empty state
-                    Text {
-                        anchors.centerIn: parent
-                        visible: Bridge.copyDestinations.length === 0
-                        text: "No destination disks selected. Click '+ Add Destination Disk' above."
-                        color: Theme.warning
-                        font.pixelSize: 11
-                    }
-
-                    ListView {
+                    ScrollView {
                         anchors.fill: parent
                         anchors.margins: 6
-                        model: Bridge.copyDestinations
+                        contentWidth: availableWidth
                         clip: true
-                        spacing: 4
 
-                        delegate: Rectangle {
+                        ColumnLayout {
                             width: parent.width
-                            height: 32
-                            radius: 4
-                            color: Theme.surfaceElevated
-                            border.color: Theme.border
+                            spacing: 6
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                spacing: 8
+                            // Flash Drives Section
+                            Text {
+                                visible: Bridge.flashDrives && Bridge.flashDrives.length > 0
+                                text: "DETECTED FLASH DRIVES / USB STICKS (" + (Bridge.flashDrives ? Bridge.flashDrives.length : 0) + ")"
+                                color: Theme.primaryLight
+                                font.pixelSize: 9
+                                font.bold: true
+                            }
 
-                                FaIcon {
-                                    icon: Icons.hdd
-                                    size: 11
-                                    iconColor: Theme.primaryLight
-                                }
-
-                                Text {
+                            Repeater {
+                                model: Bridge.flashDrives
+                                delegate: Rectangle {
                                     Layout.fillWidth: true
-                                    text: modelData
-                                    color: Theme.textPrimary
-                                    font.pixelSize: 11
-                                    elide: Text.ElideMiddle
-                                }
+                                    height: 38
+                                    radius: 4
+                                    color: root.isDriveSelected(modelData.path) ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12) : Theme.surfaceElevated
+                                    border.color: root.isDriveSelected(modelData.path) ? Theme.primary : Theme.border
+                                    border.width: 1
 
-                                FaIcon {
-                                    icon: Icons.times
-                                    size: 11
-                                    iconColor: Theme.danger
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+
+                                        Rectangle {
+                                            width: 16
+                                            height: 16
+                                            radius: 3
+                                            color: root.isDriveSelected(modelData.path) ? Theme.primary : "transparent"
+                                            border.color: root.isDriveSelected(modelData.path) ? Theme.primary : Theme.textMuted
+                                            border.width: 1
+
+                                            FaIcon {
+                                                anchors.centerIn: parent
+                                                icon: Icons.check
+                                                size: 9
+                                                iconColor: "white"
+                                                visible: root.isDriveSelected(modelData.path)
+                                            }
+                                        }
+
+                                        FaIcon {
+                                            icon: Icons.hdd
+                                            size: 13
+                                            iconColor: root.isDriveSelected(modelData.path) ? Theme.primaryLight : Theme.textMuted
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 1
+
+                                            Text {
+                                                text: modelData.name || "Removable Drive"
+                                                color: Theme.textPrimary
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Text {
+                                                text: modelData.path
+                                                color: Theme.textMuted
+                                                font.pixelSize: 9
+                                                elide: Text.ElideMiddle
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            height: 20
+                                            radius: 3
+                                            color: Qt.rgba(Theme.surface.r, Theme.surface.g, Theme.surface.b, 0.9)
+                                            border.color: Theme.border
+                                            implicitWidth: driveSpaceTxt.implicitWidth + 12
+
+                                            Text {
+                                                id: driveSpaceTxt
+                                                anchors.centerIn: parent
+                                                text: (modelData.free_text || "") + " free / " + (modelData.total_text || "")
+                                                color: Theme.textSecondary
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
                                         enabled: !Bridge.isCopying
-                                        onClicked: Bridge.removeCopyDestination(modelData)
+                                        onClicked: root.toggleDrive(modelData.path)
+                                    }
+                                }
+                            }
+
+                            // Custom Destinations Section
+                            Text {
+                                visible: Bridge.copyDestinations && Bridge.copyDestinations.length > 0
+                                text: "CUSTOM FOLDERS / DISKS (" + (Bridge.copyDestinations ? Bridge.copyDestinations.length : 0) + ")"
+                                color: Theme.textMuted
+                                font.pixelSize: 9
+                                font.bold: true
+                            }
+
+                            Repeater {
+                                model: Bridge.copyDestinations
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 34
+                                    radius: 4
+                                    color: root.isDriveSelected(modelData) ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12) : Theme.surfaceElevated
+                                    border.color: root.isDriveSelected(modelData) ? Theme.primary : Theme.border
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+
+                                        Rectangle {
+                                            width: 16
+                                            height: 16
+                                            radius: 3
+                                            color: root.isDriveSelected(modelData) ? Theme.primary : "transparent"
+                                            border.color: root.isDriveSelected(modelData) ? Theme.primary : Theme.textMuted
+                                            border.width: 1
+
+                                            FaIcon {
+                                                anchors.centerIn: parent
+                                                icon: Icons.check
+                                                size: 9
+                                                iconColor: "white"
+                                                visible: root.isDriveSelected(modelData)
+                                            }
+                                        }
+
+                                        FaIcon {
+                                            icon: Icons.folder
+                                            size: 12
+                                            iconColor: Theme.primaryLight
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData
+                                            color: Theme.textPrimary
+                                            font.pixelSize: 11
+                                            elide: Text.ElideMiddle
+                                        }
+
+                                        FaIcon {
+                                            icon: Icons.times
+                                            size: 11
+                                            iconColor: Theme.danger
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                enabled: !Bridge.isCopying
+                                                onClicked: {
+                                                    Bridge.removeCopyDestination(modelData);
+                                                    var list = (root.selectedDrivePaths || []).slice();
+                                                    var idx = list.indexOf(modelData);
+                                                    if (idx >= 0) {
+                                                        list.splice(idx, 1);
+                                                        root.selectedDrivePaths = list;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        anchors.rightMargin: 26
+                                        cursorShape: Qt.PointingHandCursor
+                                        enabled: !Bridge.isCopying
+                                        onClicked: root.toggleDrive(modelData)
+                                    }
+                                }
+                            }
+
+                            // Empty state when no flash drives and no custom destinations
+                            Rectangle {
+                                visible: (!Bridge.flashDrives || Bridge.flashDrives.length === 0) && (!Bridge.copyDestinations || Bridge.copyDestinations.length === 0)
+                                Layout.fillWidth: true
+                                height: 50
+                                color: "transparent"
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 8
+
+                                    FaIcon {
+                                        icon: Icons.infoCircle
+                                        size: 13
+                                        iconColor: Theme.warning
+                                    }
+
+                                    Text {
+                                        text: "No flash drives detected. Plug in your USB drive & click 'Scan Drives', or click '+ Add Folder'."
+                                        color: Theme.warning
+                                        font.pixelSize: 10
                                     }
                                 }
                             }
@@ -820,12 +1097,12 @@ Rectangle {
 
                 Rectangle {
                     visible: !Bridge.isCopying
-                    width: 180
+                    width: 200
                     height: 36
                     radius: Theme.radiusSm
-                    color: Bridge.copyDestinations.length > 0 ? (startCopyMouse.containsMouse ? Theme.primaryHover : Theme.primary) : Theme.card
-                    border.color: Bridge.copyDestinations.length > 0 ? Theme.primary : Theme.border
-                    opacity: Bridge.copyDestinations.length > 0 ? 1.0 : 0.5
+                    color: root.selectedDrivePaths.length > 0 ? (startCopyMouse.containsMouse ? Theme.primaryHover : Theme.primary) : Theme.card
+                    border.color: root.selectedDrivePaths.length > 0 ? Theme.primary : Theme.border
+                    opacity: root.selectedDrivePaths.length > 0 ? 1.0 : 0.5
 
                     RowLayout {
                         anchors.centerIn: parent
@@ -836,7 +1113,7 @@ Rectangle {
                             iconColor: "white"
                         }
                         Text {
-                            text: "Start Copy to " + Bridge.copyDestinations.length + " Disk(s)"
+                            text: "Start Copy to " + root.selectedDrivePaths.length + " Drive(s)"
                             color: "white"
                             font.pixelSize: 11
                             font.bold: true
@@ -847,8 +1124,8 @@ Rectangle {
                         id: startCopyMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Bridge.copyDestinations.length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        enabled: Bridge.copyDestinations.length > 0
+                        cursorShape: root.selectedDrivePaths.length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        enabled: root.selectedDrivePaths.length > 0
                         onClicked: {
                             var targetParam = null;
                             if (root.selectedScope === "article") {
@@ -858,7 +1135,7 @@ Rectangle {
                             } else if (root.selectedScope === "subcategory") {
                                 targetParam = { "category": root.selectedCategory, "subcategory": root.selectedSubcategory };
                             }
-                            Bridge.startCopy(root.selectedScope, targetParam, null, root.includeClientAgent);
+                            Bridge.startCopy(root.selectedScope, targetParam, root.selectedDrivePaths, root.includeClientAgent);
                         }
                     }
                 }

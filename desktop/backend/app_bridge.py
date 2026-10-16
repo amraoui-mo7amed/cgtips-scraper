@@ -166,6 +166,7 @@ class AppBridge(QObject):
     copyLogsChanged = Signal()
     copyLogAdded = Signal(str)
     copyFinished = Signal(bool, str)  # (success, message)
+    flashDrivesChanged = Signal()
 
     # Loft Design API signals
     apiUrlChanged = Signal()
@@ -284,6 +285,8 @@ class AppBridge(QObject):
         }
         self._copy_logs: List[str] = []
         self._copy_stop_event = threading.Event()
+        self._flash_drives: List[Dict[str, Any]] = []
+        self.refreshFlashDrives()
 
         # Upload state
         self._is_uploading = False
@@ -472,6 +475,10 @@ class AppBridge(QObject):
     def copyDestinations(self) -> List[str]:
         return settings_manager.get_copy_destinations()
 
+    @Property("QVariant", notify=flashDrivesChanged)
+    def flashDrives(self) -> List[Dict[str, Any]]:
+        return self._flash_drives
+
     # Batch Downloader Properties
     @Property(bool, notify=batchDownloadingChanged)
     def isBatchDownloading(self) -> bool:
@@ -597,6 +604,11 @@ class AppBridge(QObject):
         settings_manager.clear_copy_destinations()
         self.copyDestinationsChanged.emit()
         self.toast.emit("info", "Cleared all destination disks")
+
+    @Slot()
+    def refreshFlashDrives(self):
+        self._flash_drives = self.service.get_flash_drives()
+        self.flashDrivesChanged.emit()
 
     # Google Drive Slots
     @Slot(bool)
@@ -1268,11 +1280,14 @@ class AppBridge(QObject):
         def _done(r):
             self.loadLibrary()
             self.refreshStatus()
+            sync_res = self.service.sync_history()
             self.libraryImported.emit()
             msg = f"Imported {r['imported']} of {r['found']} items ({r['skipped']} already present"
             msg += f", {r['failed']} failed: {'; '.join(r['errors'][:2])})" if r["failed"] else ")"
             if r["found"] == 0 and r["notes"]:
                 msg = r["notes"][0]
+            if sync_res.get("added", 0):
+                msg += f" • {sync_res['added']} model(s) registered in history"
             failed_all = r["failed"] and not r["imported"]
             self._job_update(job_id, status="failed" if failed_all else "done", progress=1.0, detail=msg)
             return msg
@@ -1315,12 +1330,14 @@ class AppBridge(QObject):
         self._run_maintenance("Exporting download history...", lambda: self.service.export_history(path),
                               lambda n: f"Download history exported: {n} articles")
 
+    @Slot()
     @Slot(bool)
     def importLibraryFolder(self, move: bool = False):
         chosen = QFileDialog.getExistingDirectory(None, "Choose a folder with downloaded models", str(Path.home()))
         if chosen:
             self._import_library([chosen], move)
 
+    @Slot()
     @Slot(bool)
     def importLibraryFiles(self, move: bool = False):
         files, _ = QFileDialog.getOpenFileNames(
@@ -1329,6 +1346,30 @@ class AppBridge(QObject):
         )
         if files:
             self._import_library(files, move)
+
+    @Slot()
+    @Slot(bool)
+    def syncHistoryFromDisk(self, prune_missing: bool = True):
+        """Scans the local library, registers all models in history, and removes incomplete items (only images)."""
+        if self._maintenance_busy:
+            self.toast.emit("warning", "Another operation is running")
+            return
+
+        def _task():
+            items = library_manager.scan_library().get("items", [])
+            return self.service.sync_history(items, prune_missing=prune_missing)
+
+        def _done(r):
+            self.loadLibrary()
+            self.refreshStatus()
+            added = r.get("added", 0)
+            removed = r.get("removed", 0)
+            total = r.get("total", 0)
+            msg = f"History synced: {added} models verified, {removed} incomplete items removed ({total} total in history)."
+            self.toast.emit("success", msg)
+            return msg
+
+        self._run_maintenance("Syncing download history with disk...", _task, _done)
 
     @Slot("QVariantList", str)
     def exportBulkZip(self, rel_folder_paths, export_type: str = "both"):

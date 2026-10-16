@@ -68,6 +68,38 @@ class TestBulkAndQueue(unittest.TestCase):
         self.assertEqual(history.count(), 1)
         self.assertTrue(history.has(link="https://example.com/test-article"))
 
+    def test_history_sync_with_library(self):
+        # 1. Start with an existing entry and an incomplete entry in history
+        history.add(link="https://example.com/model-a", title="Model A Complete")
+        history.add(link="https://example.com/model-b", title="Model B Only Images")
+        self.assertEqual(history.count(), 2)
+
+        # 2. Simulate scanned library items from disk:
+        # - Model A: has a model file on disk
+        # - Model B: only has images (has_model = False)
+        # - Model C: freshly discovered model on disk (not yet in history)
+        scanned_items = [
+            {"has_model": True, "title": "Model A Complete", "article_url": "https://example.com/model-a", "category": "Cat", "subcategory": "Sub"},
+            {"has_model": False, "title": "Model B Only Images", "article_url": "https://example.com/model-b", "category": "Cat", "subcategory": "Sub"},
+            {"has_model": True, "title": "Model C Newly Found", "article_url": "https://example.com/model-c", "category": "Cat", "subcategory": "Sub"},
+        ]
+
+        # 3. Run sync
+        result = history.sync_with_library(scanned_items, prune_missing=True)
+        self.assertEqual(result["added"], 1)    # Model C was added
+        self.assertEqual(result["removed"], 1)  # Model B was pruned because has_model == False
+        self.assertEqual(result["total"], 2)
+
+        # Verify exact membership
+        self.assertTrue(history.has(link="https://example.com/model-a"))
+        self.assertFalse(history.has(link="https://example.com/model-b"))
+        self.assertTrue(history.has(link="https://example.com/model-c"))
+
+        # Test explicit remove
+        self.assertTrue(history.remove(link="https://example.com/model-c"))
+        self.assertFalse(history.has(link="https://example.com/model-c"))
+        self.assertEqual(history.count(), 1)
+
     def test_download_queue_operations(self):
         queue = DownloadQueue()
         self.assertEqual(len(queue.items()), 0)

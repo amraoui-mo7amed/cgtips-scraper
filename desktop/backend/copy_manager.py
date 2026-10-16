@@ -7,7 +7,9 @@ Automatically includes configured Client Agent executable.
 import logging
 import os
 import shutil
+import sys
 import threading
+import zipfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -16,6 +18,101 @@ from .library import library_manager, format_bytes
 from .settings_manager import settings_manager
 
 logger = logging.getLogger("copy_manager")
+
+
+def get_connected_flash_drives() -> List[Dict[str, Any]]:
+    """
+    Detects external/removable flash drives, USB sticks, and external disks.
+    Works across macOS, Windows, and Linux.
+    """
+    drives = []
+
+    if sys.platform == "darwin":
+        volumes_dir = Path("/Volumes")
+        if volumes_dir.exists():
+            for p in sorted(volumes_dir.iterdir()):
+                if not p.is_dir() or p.name.startswith("."):
+                    continue
+                try:
+                    rp = os.path.realpath(p)
+                    if rp == "/" or rp.startswith("/System") or rp == os.path.realpath(Path.home()):
+                        continue
+                    usage = shutil.disk_usage(p)
+                    total_str = format_bytes(usage.total)
+                    free_str = format_bytes(usage.free)
+                    drives.append({
+                        "path": str(p),
+                        "name": p.name,
+                        "label": f"{p.name} ({free_str} free of {total_str})",
+                        "free_bytes": usage.free,
+                        "total_bytes": usage.total,
+                        "free_text": free_str,
+                        "total_text": total_str,
+                    })
+                except Exception:
+                    pass
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                if bitmask & 1:
+                    drive_path = f"{letter}:\\"
+                    drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_path)
+                    # 2 = DRIVE_REMOVABLE (Flash drives, USB sticks)
+                    # 3 = DRIVE_FIXED (External USB HDDs / SSDs or secondary drives, skip C:)
+                    if drive_type in (2, 3) and letter != "C":
+                        try:
+                            vol_name_buf = ctypes.create_unicode_buffer(1024)
+                            ctypes.windll.kernel32.GetVolumeInformationW(
+                                drive_path, vol_name_buf, 1024, None, None, None, None, 0
+                            )
+                            vol_name = vol_name_buf.value or f"Drive ({letter}:)"
+                            usage = shutil.disk_usage(drive_path)
+                            total_str = format_bytes(usage.total)
+                            free_str = format_bytes(usage.free)
+                            drives.append({
+                                "path": drive_path,
+                                "name": vol_name,
+                                "label": f"{vol_name} [{letter}:] ({free_str} free of {total_str})",
+                                "free_bytes": usage.free,
+                                "total_bytes": usage.total,
+                                "free_text": free_str,
+                                "total_text": total_str,
+                            })
+                        except Exception:
+                            pass
+                bitmask >>= 1
+        except Exception:
+            pass
+    else:
+        # Linux
+        candidates = [
+            Path(f"/media/{os.environ.get('USER', '')}"),
+            Path(f"/run/media/{os.environ.get('USER', '')}"),
+            Path("/mnt"),
+        ]
+        for base in candidates:
+            if base.exists():
+                for p in sorted(base.iterdir()):
+                    if p.is_dir() and not p.name.startswith("."):
+                        try:
+                            usage = shutil.disk_usage(p)
+                            total_str = format_bytes(usage.total)
+                            free_str = format_bytes(usage.free)
+                            drives.append({
+                                "path": str(p),
+                                "name": p.name,
+                                "label": f"{p.name} ({free_str} free of {total_str})",
+                                "free_bytes": usage.free,
+                                "total_bytes": usage.total,
+                                "free_text": free_str,
+                                "total_text": total_str,
+                            })
+                        except Exception:
+                            pass
+
+    return drives
 
 
 def _copy_stream_to_destinations(
@@ -129,12 +226,17 @@ class CopyManager:
             storage_path = vd if vd.name.lower() == "storage" else vd / "storage"
             _log(f"  • {vd} -> {storage_path}")
 
-        # 2. Gather articles by scope
-        articles = lib.get_articles_by_scope(scope=scope, target=target)
+        # 2. Gather articles by scope and FILTER ONLY FINISHED MODELS
+        raw_articles = lib.get_articles_by_scope(scope=scope, target=target)
+        articles = [a for a in raw_articles if a.get("has_model")]
         total_articles = len(articles)
 
         if total_articles == 0:
-            _log(f"No articles found matching scope '{scope}'")
+            skipped_incomplete = len(raw_articles)
+            msg = f"No finished 3D models found matching scope '{scope}'"
+            if skipped_incomplete > 0:
+                msg += f" ({skipped_incomplete} incomplete articles with only images were skipped)"
+            _log(msg)
             return {
                 "success": True,
                 "total_articles": 0,
@@ -143,7 +245,9 @@ class CopyManager:
                 "cancelled": False,
             }
 
-        _log(f"Found {total_articles} article(s) to copy.")
+        skipped_incomplete = len(raw_articles) - total_articles
+        extra_note = f" (skipped {skipped_incomplete} incomplete articles missing models)" if skipped_incomplete > 0 else ""
+        _log(f"Found {total_articles} article(s) with finished models to copy{extra_note}.")
 
         # 3. Handle Client Agent Executable Auto-Copy
         agent_path_str = client_agent_path or settings_manager.get_client_agent_path()
@@ -220,6 +324,32 @@ class CopyManager:
                     total_bytes_copied += bytes_written
                 except Exception as fe:
                     _log(f"⚠️ Error copying file {src_file.name}: {fe}")
+
+            # 5. Extract model zip files and delete zip on destination flash drives
+            for dest in valid_dests:
+                dest_storage = dest if dest.name.lower() == "storage" else dest / "storage"
+                dest_article_dir = dest_storage / rel_folder
+                dest_model_dir = dest_article_dir / "model"
+                if dest_model_dir.is_dir():
+                    for archive in list(dest_model_dir.iterdir()):
+                        if not archive.is_file():
+                            continue
+                        if archive.suffix.lower() == ".zip":
+                            try:
+                                _log(f"  📦 Unzipping model archive on {dest.name}: {archive.name}...")
+                                with zipfile.ZipFile(archive, "r") as zf:
+                                    zf.extractall(dest_model_dir)
+                                archive.unlink()
+                                _log(f"  ✓ Extracted and deleted zip archive: {archive.name}")
+                            except Exception as ze:
+                                _log(f"  ⚠️ Could not extract zip {archive.name} on {dest.name}: {ze}")
+                        elif archive.suffix.lower() in (".rar", ".7z"):
+                            try:
+                                shutil.unpack_archive(str(archive), str(dest_model_dir))
+                                archive.unlink()
+                                _log(f"  ✓ Extracted and deleted archive: {archive.name}")
+                            except Exception:
+                                pass
 
             copied_articles += 1
 

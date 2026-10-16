@@ -163,3 +163,67 @@ def import_from(path: str) -> Dict[str, int]:
         raise ValueError("Not a download history or feeds file")
     added = add_many(entries)
     return {"found": found, "downloaded": len(entries), "added": added, "total": count()}
+
+
+def remove(link: str = "", title: str = "") -> bool:
+    """Removes an article from history by link or title. Returns True if removed."""
+    with _lock:
+        h = _load()
+        existing = _find(link, title)
+        if existing and existing in h:
+            h.pop(existing, None)
+            tk = title_key(title)
+            if tk in _titles:
+                _titles.pop(tk, None)
+            _save()
+            return True
+        return False
+
+
+def sync_with_library(library_items: Iterable[Dict[str, Any]], prune_missing: bool = True) -> Dict[str, int]:
+    """
+    Synchronizes download_history.json with scanned library items:
+    1. Items with valid models (has_model == True) are added/verified in history.
+    2. Items without models (folders on disk that only have images / no model) are removed
+       from history if prune_missing is True, allowing them to be downloaded again.
+    Returns: {"added": int, "removed": int, "total": int}
+    """
+    with _lock:
+        h = _load()
+        added = 0
+        removed = 0
+        items = list(library_items)
+
+        # 1. Add valid models
+        to_add = []
+        for it in items:
+            if it.get("has_model"):
+                link, title = _url_key(it.get("article_url") or ""), it.get("title") or ""
+                if not link and title_key(title) == "t:":
+                    continue
+                if _find(link, title) is None:
+                    to_add.append({
+                        "link": link,
+                        "title": title,
+                        "category": it.get("category", ""),
+                        "subcategory": it.get("subcategory", ""),
+                    })
+        if to_add:
+            added = add_many(to_add)
+
+        # 2. Prune incomplete items (present on disk but missing models)
+        if prune_missing:
+            for it in items:
+                if not it.get("has_model"):
+                    link, title = _url_key(it.get("article_url") or ""), it.get("title") or ""
+                    existing = _find(link, title)
+                    if existing and existing in h:
+                        h.pop(existing, None)
+                        tk = title_key(title)
+                        if tk in _titles:
+                            _titles.pop(tk, None)
+                        removed += 1
+            if removed:
+                _save()
+
+        return {"added": added, "removed": removed, "total": count()}

@@ -10,6 +10,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -40,7 +41,8 @@ class TestTodoFeatures(unittest.TestCase):
         art1.mkdir(parents=True, exist_ok=True)
         (art1 / "image_1.jpg").write_bytes(b"image1")
         (art1 / "model").mkdir(exist_ok=True)
-        (art1 / "model" / "villa.zip").write_bytes(b"dummy_model_zip_bytes")
+        with zipfile.ZipFile(art1 / "model" / "villa.zip", "w") as zf:
+            zf.writestr("villa.skp", b"dummy_model_skp_bytes")
 
         # Category: Architecture -> Subcategory: Houses -> Article 2 (missing model)
         art2 = self.feeds_dir / "Architecture" / "Houses" / "102. Wooden Cabin"
@@ -183,7 +185,7 @@ class TestTodoFeatures(unittest.TestCase):
         )
 
         self.assertTrue(result["success"])
-        self.assertEqual(result["copied_articles"], 2)
+        self.assertEqual(result["copied_articles"], 1)
         self.assertEqual(result["destinations_count"], 2)
         self.assertEqual(result["client_agent_copied"], 2)
 
@@ -194,17 +196,21 @@ class TestTodoFeatures(unittest.TestCase):
         self.assertEqual((dest_disk2 / "client_agent.exe").read_bytes(), b"MZ_DUMMY_CLIENT_AGENT_BINARY_EXE")
 
         # Verify articles structure on both disks (in storage folder)
+        # Note: only finished models are copied; incomplete articles without models are skipped.
+        # Furthermore, .zip model archives are automatically unzipped and the .zip deleted.
         art1_on_disk1 = dest_disk1 / "storage" / "Architecture" / "Houses" / "101. Modern Villa"
         art2_on_disk1 = dest_disk1 / "storage" / "Architecture" / "Houses" / "102. Wooden Cabin"
-        self.assertTrue((art1_on_disk1 / "model" / "villa.zip").exists())
+        self.assertTrue((art1_on_disk1 / "model" / "villa.skp").exists())
+        self.assertFalse((art1_on_disk1 / "model" / "villa.zip").exists())
         self.assertTrue((art1_on_disk1 / "image_1.jpg").exists())
-        self.assertTrue((art2_on_disk1 / "image_1.jpg").exists())
+        self.assertFalse(art2_on_disk1.exists())
 
         art1_on_disk2 = dest_disk2 / "storage" / "Architecture" / "Houses" / "101. Modern Villa"
         art2_on_disk2 = dest_disk2 / "storage" / "Architecture" / "Houses" / "102. Wooden Cabin"
-        self.assertTrue((art1_on_disk2 / "model" / "villa.zip").exists())
+        self.assertTrue((art1_on_disk2 / "model" / "villa.skp").exists())
+        self.assertFalse((art1_on_disk2 / "model" / "villa.zip").exists())
         self.assertTrue((art1_on_disk2 / "image_1.jpg").exists())
-        self.assertTrue((art2_on_disk2 / "image_1.jpg").exists())
+        self.assertFalse(art2_on_disk2.exists())
 
     def test_copy_by_single_article(self):
         copy_mgr = CopyManager()
@@ -223,7 +229,8 @@ class TestTodoFeatures(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["copied_articles"], 1)
         self.assertTrue((dest_disk / "client_agent.exe").exists())
-        self.assertTrue((dest_disk / "storage" / "Architecture" / "Houses" / "101. Modern Villa" / "model" / "villa.zip").exists())
+        self.assertTrue((dest_disk / "storage" / "Architecture" / "Houses" / "101. Modern Villa" / "model" / "villa.skp").exists())
+        self.assertFalse((dest_disk / "storage" / "Architecture" / "Houses" / "101. Modern Villa" / "model" / "villa.zip").exists())
 
     def test_batch_download_missing_by_scopes(self):
         # Mock download function
